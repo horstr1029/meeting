@@ -16,8 +16,6 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "DAB Meetings",
   description: "AI-powered meeting transcription and minutes",
-  manifest: "/manifest.json",
-  appleWebApp: { capable: true, statusBarStyle: "black-translucent", title: "DAB Meetings" },
 };
 
 export default function RootLayout({
@@ -30,6 +28,13 @@ export default function RootLayout({
       lang="en"
       className={`${geistSans.variable} ${geistMono.variable} h-full antialiased`}
     >
+      <head>
+        <link rel="manifest" href="/manifest.json" />
+        <meta name="theme-color" content="#111223" />
+        <meta name="apple-mobile-web-app-capable" content="yes" />
+        <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+        <meta name="apple-mobile-web-app-title" content="DAB Meetings" />
+      </head>
       <body className="min-h-full flex flex-col"><Providers>{children}</Providers></body>
     </html>
   );

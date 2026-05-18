@@ -70,6 +70,19 @@ async function transcribeWithGroq(formData: FormData, apiKey: string, language: 
     return NextResponse.json({ error: `Groq unreachable: ${message}` }, { status: 502 });
   }
 
+  if (!response.ok) {
+    let errMsg = `Groq error ${response.status}`;
+    try {
+      const errData = await response.json() as { error?: { message?: string } | string };
+      const e = errData.error;
+      errMsg = typeof e === "string" ? e : (e?.message ?? errMsg);
+    } catch { /* non-JSON error body */ }
+    if (response.status === 413) {
+      errMsg = "Audio file too large for Groq (25 MB limit). Use self-hosted Whisper or AssemblyAI for long recordings.";
+    }
+    return NextResponse.json({ error: errMsg }, { status: response.status });
+  }
+
   const data = await response.json();
   return NextResponse.json(data, { status: response.status });
 }
