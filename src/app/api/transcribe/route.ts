@@ -48,43 +48,104 @@ export async function POST(req: NextRequest) {
   return transcribeWithWhisper(formData, { ...settings, whisperLang: language });
 }
 
+const GROQ_LIMIT = 24 * 1024 * 1024;   // 24 MB — stay safely under Groq's 25 MB hard limit
+const CHUNK_BYTES = 18 * 1024 * 1024;  // 18 MB of audio data per chunk
+
+// Split a PCM WAV file into multiple valid WAV blobs, each with its own header.
+function splitWavBlob(buffer: ArrayBuffer): Blob[] {
+  const bytes = new Uint8Array(buffer);
+  const view = new DataView(buffer);
+  const tag = (off: number, n: number) => new TextDecoder().decode(bytes.subarray(off, off + n));
+
+  if (tag(0, 4) !== "RIFF" || tag(8, 4) !== "WAVE") throw new Error("Not a WAV file");
+
+  let pos = 12;
+  while (pos + 8 <= buffer.byteLength) {
+    const id = tag(pos, 4);
+    const sz = view.getUint32(pos + 4, true);
+    if (id === "data") {
+      // header = everything from byte 0 up to and including the "data\0\0\0\0" 8-byte marker
+      const headerEnd = pos + 8;
+      const header = bytes.slice(0, headerEnd);
+      const audio  = bytes.slice(headerEnd, headerEnd + sz);
+      const blobs: Blob[] = [];
+
+      for (let off = 0; off < audio.length; off += CHUNK_BYTES) {
+        const slice = audio.slice(off, off + CHUNK_BYTES);
+        const wav = new Uint8Array(header.length + slice.length);
+        wav.set(header);
+        wav.set(slice, header.length);
+        // Patch RIFF size (offset 4) and data chunk size (offset pos+4)
+        const dv = new DataView(wav.buffer);
+        dv.setUint32(4,     header.length - 8 + slice.length, true);
+        dv.setUint32(pos + 4, slice.length, true);
+        blobs.push(new Blob([wav], { type: "audio/wav" }));
+      }
+      return blobs;
+    }
+    pos += 8 + sz + (sz % 2); // word-align
+  }
+  throw new Error("No 'data' chunk in WAV");
+}
+
+async function groqTranscribeBlob(blob: Blob, apiKey: string, language: string): Promise<string> {
+  const fd = new FormData();
+  fd.set("file", blob, "audio.wav");
+  fd.set("model", "whisper-large-v3");
+  fd.set("response_format", "json");
+  if (language) fd.set("language", language);
+
+  const res = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
+    method: "POST",
+    headers: { Authorization: `Bearer ${apiKey}` },
+    body: fd,
+    signal: AbortSignal.timeout(300_000), // 5 min per chunk
+  });
+
+  if (!res.ok) {
+    let msg = `Groq error ${res.status}`;
+    try {
+      const d = await res.json() as { error?: { message?: string } | string };
+      const e = d.error;
+      msg = typeof e === "string" ? e : (e?.message ?? msg);
+    } catch { /* non-JSON */ }
+    throw new Error(msg);
+  }
+
+  const data = await res.json() as { text?: string };
+  return data.text?.trim() ?? "";
+}
+
 async function transcribeWithGroq(formData: FormData, apiKey: string, language: string) {
   if (!apiKey) {
     return NextResponse.json({ error: "Groq API key not set in settings" }, { status: 400 });
   }
 
-  formData.set("model", "whisper-large-v3");
-  formData.set("response_format", "json");
-  if (language) formData.set("language", language);
+  const audioFile = formData.get("file") as Blob | null;
+  if (!audioFile) {
+    return NextResponse.json({ error: "No audio file provided" }, { status: 400 });
+  }
 
-  let response: Response;
   try {
-    response = await fetch("https://api.groq.com/openai/v1/audio/transcriptions", {
-      method: "POST",
-      headers: { Authorization: `Bearer ${apiKey}` },
-      body: formData,
-      signal: AbortSignal.timeout(120_000),
-    });
-  } catch (err) {
-    const message = err instanceof Error ? err.message : "Unknown error";
-    return NextResponse.json({ error: `Groq unreachable: ${message}` }, { status: 502 });
-  }
-
-  if (!response.ok) {
-    let errMsg = `Groq error ${response.status}`;
-    try {
-      const errData = await response.json() as { error?: { message?: string } | string };
-      const e = errData.error;
-      errMsg = typeof e === "string" ? e : (e?.message ?? errMsg);
-    } catch { /* non-JSON error body */ }
-    if (response.status === 413) {
-      errMsg = "Audio file too large for Groq (25 MB limit). Use self-hosted Whisper or AssemblyAI for long recordings.";
+    // Small file — send directly
+    if (audioFile.size <= GROQ_LIMIT) {
+      const text = await groqTranscribeBlob(audioFile, apiKey, language);
+      return NextResponse.json({ text });
     }
-    return NextResponse.json({ error: errMsg }, { status: response.status });
-  }
 
-  const data = await response.json();
-  return NextResponse.json(data, { status: response.status });
+    // Large file — split WAV and transcribe chunks sequentially
+    const buffer = await audioFile.arrayBuffer();
+    const chunks = splitWavBlob(buffer);
+    const parts: string[] = [];
+    for (const chunk of chunks) {
+      parts.push(await groqTranscribeBlob(chunk, apiKey, language));
+    }
+    return NextResponse.json({ text: parts.join(" ") });
+
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Unknown error";
+    return NextResponse.json({ error: msg }, { status: 502 });
+  }
 }
 
 async function transcribeWithAssemblyAI(formData: FormData, apiKey: string, language: string) {
