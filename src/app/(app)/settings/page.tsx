@@ -4,6 +4,7 @@ import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
 type Provider = "groq" | "whisper" | "webspeech";
+type TestState = "idle" | "testing" | "ok" | "error";
 
 interface Settings {
   transcriptionProvider: Provider;
@@ -25,12 +26,22 @@ interface Settings {
 const defaultSettings: Settings = {
   transcriptionProvider: "groq",
   groqApiKey: "",
-  whisperHost: "localhost", whisperPort: "9000", whisperPath: "/transcribe",
+  whisperHost: "whisper", whisperPort: "9000", whisperPath: "/v1/audio/transcriptions",
   whisperModel: "whisper-1", whisperLang: "", whisperProto: "http",
-  ollamaHost: "localhost", ollamaPort: "11434",
-  ollamaModel: "llama3.2:latest", ollamaProto: "http",
+  ollamaHost: "172.17.0.1", ollamaPort: "11211",
+  ollamaModel: "mistral:7b-instruct", ollamaProto: "http",
   theme: "dark", lowMemoryMode: true,
 };
+
+function TestButton({
+  state, onClick, label,
+}: { state: TestState; onClick: () => void; label?: string }) {
+  const base = "px-3 py-1.5 rounded-lg text-xs font-medium border transition";
+  if (state === "testing") return <button disabled className={`${base} border-gray-600 text-gray-500`}>Testing…</button>;
+  if (state === "ok") return <button disabled className={`${base} border-green-700 bg-green-950 text-green-400`}>✓ Connected</button>;
+  if (state === "error") return <button onClick={onClick} className={`${base} border-red-700 bg-red-950 text-red-400`}>✗ Retry</button>;
+  return <button onClick={onClick} className={`${base} border-gray-600 text-gray-400 hover:border-gray-400 hover:text-white`}>{label ?? "Test"}</button>;
+}
 
 export default function SettingsPage() {
   const router = useRouter();
@@ -38,6 +49,11 @@ export default function SettingsPage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
+  const [groqTest, setGroqTest] = useState<TestState>("idle");
+  const [groqError, setGroqError] = useState("");
+  const [ollamaTest, setOllamaTest] = useState<TestState>("idle");
+  const [ollamaError, setOllamaError] = useState("");
+  const [ollamaModels, setOllamaModels] = useState<string[]>([]);
 
   useEffect(() => {
     fetch("/api/settings")
@@ -58,6 +74,50 @@ export default function SettingsPage() {
     setSaving(false);
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
+  };
+
+  const testGroq = async () => {
+    setGroqTest("testing");
+    setGroqError("");
+    const res = await fetch("/api/test-connection", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "groq", groqApiKey: settings.groqApiKey }),
+    });
+    const data = await res.json() as { ok: boolean; error?: string };
+    if (data.ok) {
+      setGroqTest("ok");
+    } else {
+      setGroqTest("error");
+      setGroqError(data.error ?? "Unknown error");
+    }
+  };
+
+  const testOllama = async () => {
+    setOllamaTest("testing");
+    setOllamaError("");
+    setOllamaModels([]);
+    const res = await fetch("/api/test-connection", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        type: "ollama",
+        ollamaProto: settings.ollamaProto,
+        ollamaHost: settings.ollamaHost,
+        ollamaPort: settings.ollamaPort,
+      }),
+    });
+    const data = await res.json() as { ok: boolean; models?: string[]; error?: string };
+    if (data.ok) {
+      setOllamaTest("ok");
+      setOllamaModels(data.models ?? []);
+      if (data.models && data.models.length > 0 && !data.models.includes(settings.ollamaModel)) {
+        set("ollamaModel", data.models[0]);
+      }
+    } else {
+      setOllamaTest("error");
+      setOllamaError(data.error ?? "Unknown error");
+    }
   };
 
   if (loading) {
@@ -95,37 +155,45 @@ export default function SettingsPage() {
             </div>
 
             {settings.transcriptionProvider === "groq" && (
-              <div>
-                <label className="text-sm text-gray-400 block mb-1">Groq API Key</label>
-                <input type="password" value={settings.groqApiKey}
-                  onChange={(e) => set("groqApiKey", e.target.value)}
-                  placeholder="gsk_..."
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500" />
-                <p className="text-xs text-gray-500 mt-1">Get a free key at console.groq.com</p>
+              <div className="space-y-2">
+                <label className="text-sm text-gray-400 block">Groq API Key</label>
+                <div className="flex gap-2">
+                  <input type="password" value={settings.groqApiKey}
+                    onChange={(e) => { set("groqApiKey", e.target.value); setGroqTest("idle"); }}
+                    placeholder="gsk_..."
+                    className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500" />
+                  <TestButton state={groqTest} onClick={testGroq} label="Test" />
+                </div>
+                {groqTest === "error" && (
+                  <p className="text-xs text-red-400">{groqError}</p>
+                )}
+                <p className="text-xs text-gray-500">Get a free key at console.groq.com</p>
               </div>
             )}
 
             {settings.transcriptionProvider === "whisper" && (
-              <div className="grid grid-cols-2 gap-3">
-                {[
-                  ["Host", "whisperHost"], ["Port", "whisperPort"],
-                  ["Path", "whisperPath"], ["Model", "whisperModel"],
-                  ["Language", "whisperLang"],
-                ].map(([label, key]) => (
-                  <div key={key}>
-                    <label className="text-xs text-gray-500 block mb-1">{label}</label>
-                    <input value={(settings as unknown as Record<string, string>)[key]}
-                      onChange={(e) => set(key as keyof Settings, e.target.value)}
-                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500" />
+              <div className="space-y-3">
+                <div className="grid grid-cols-2 gap-3">
+                  {[
+                    ["Host", "whisperHost"], ["Port", "whisperPort"],
+                    ["Path", "whisperPath"], ["Model", "whisperModel"],
+                    ["Language", "whisperLang"],
+                  ].map(([label, key]) => (
+                    <div key={key}>
+                      <label className="text-xs text-gray-500 block mb-1">{label}</label>
+                      <input value={(settings as unknown as Record<string, string>)[key]}
+                        onChange={(e) => set(key as keyof Settings, e.target.value)}
+                        className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500" />
+                    </div>
+                  ))}
+                  <div>
+                    <label className="text-xs text-gray-500 block mb-1">Protocol</label>
+                    <select value={settings.whisperProto} onChange={(e) => set("whisperProto", e.target.value)}
+                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white">
+                      <option value="http">HTTP</option>
+                      <option value="https">HTTPS</option>
+                    </select>
                   </div>
-                ))}
-                <div>
-                  <label className="text-xs text-gray-500 block mb-1">Protocol</label>
-                  <select value={settings.whisperProto} onChange={(e) => set("whisperProto", e.target.value)}
-                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white">
-                    <option value="http">HTTP</option>
-                    <option value="https">HTTPS</option>
-                  </select>
                 </div>
               </div>
             )}
@@ -141,26 +209,54 @@ export default function SettingsPage() {
         {/* Ollama */}
         <section className="space-y-4">
           <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider">Ollama (Minutes Generation)</h2>
-          <div className="bg-gray-900 rounded-xl p-5 border border-gray-800">
+          <div className="bg-gray-900 rounded-xl p-5 border border-gray-800 space-y-4">
             <div className="grid grid-cols-2 gap-3">
-              {[
-                ["Host", "ollamaHost"], ["Port", "ollamaPort"], ["Model", "ollamaModel"],
-              ].map(([label, key]) => (
-                <div key={key}>
-                  <label className="text-xs text-gray-500 block mb-1">{label}</label>
-                  <input value={(settings as unknown as Record<string, string>)[key]}
-                    onChange={(e) => set(key as keyof Settings, e.target.value)}
-                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500" />
-                </div>
-              ))}
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">Host</label>
+                <input value={settings.ollamaHost}
+                  onChange={(e) => { set("ollamaHost", e.target.value); setOllamaTest("idle"); }}
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500" />
+              </div>
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">Port</label>
+                <input value={settings.ollamaPort}
+                  onChange={(e) => { set("ollamaPort", e.target.value); setOllamaTest("idle"); }}
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500" />
+              </div>
               <div>
                 <label className="text-xs text-gray-500 block mb-1">Protocol</label>
-                <select value={settings.ollamaProto} onChange={(e) => set("ollamaProto", e.target.value)}
+                <select value={settings.ollamaProto}
+                  onChange={(e) => { set("ollamaProto", e.target.value); setOllamaTest("idle"); }}
                   className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white">
                   <option value="http">HTTP</option>
                   <option value="https">HTTPS</option>
                 </select>
               </div>
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">Model</label>
+                {ollamaModels.length > 0 ? (
+                  <select value={settings.ollamaModel} onChange={(e) => set("ollamaModel", e.target.value)}
+                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white">
+                    {ollamaModels.map((m) => (
+                      <option key={m} value={m}>{m}</option>
+                    ))}
+                  </select>
+                ) : (
+                  <input value={settings.ollamaModel}
+                    onChange={(e) => set("ollamaModel", e.target.value)}
+                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500" />
+                )}
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 pt-1">
+              <TestButton state={ollamaTest} onClick={testOllama} label="Test Connection" />
+              {ollamaTest === "ok" && ollamaModels.length > 0 && (
+                <span className="text-xs text-green-400">{ollamaModels.length} model{ollamaModels.length !== 1 ? "s" : ""} available</span>
+              )}
+              {ollamaTest === "error" && (
+                <span className="text-xs text-red-400">{ollamaError}</span>
+              )}
             </div>
           </div>
         </section>
