@@ -97,8 +97,15 @@ export default function RecordPage() {
       });
 
       if (!transcribeRes.ok) {
-        const err = await transcribeRes.json();
-        throw new Error(err.error ?? "Transcription failed");
+        let errMsg = `Server error ${transcribeRes.status}`;
+        try {
+          const err = await transcribeRes.json();
+          errMsg = typeof err.error === "string" ? err.error : errMsg;
+        } catch {
+          if (transcribeRes.status === 504) errMsg = "Transcription timed out — the recording may be too long.";
+          else if (transcribeRes.status >= 500) errMsg = "Server error during transcription. Check server logs.";
+        }
+        throw new Error(errMsg);
       }
 
       const data = await transcribeRes.json();

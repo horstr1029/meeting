@@ -2,6 +2,8 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { NextRequest, NextResponse } from "next/server";
 
+export const maxDuration = 1800; // 30 minutes — allows long AssemblyAI polls
+
 export async function POST(req: NextRequest) {
   const session = await auth();
   if (!session?.user?.id) {
@@ -175,7 +177,7 @@ async function transcribeWithAssemblyAI(formData: FormData, apiKey: string, lang
       method: "POST",
       headers: { authorization: apiKey, "content-type": "application/octet-stream" },
       body: audioFile,
-      signal: AbortSignal.timeout(120_000),
+      signal: AbortSignal.timeout(600_000), // 10 min — large files take time
     });
     if (!uploadRes.ok) {
       return NextResponse.json({ error: "AssemblyAI upload failed" }, { status: 502 });
@@ -213,9 +215,9 @@ async function transcribeWithAssemblyAI(formData: FormData, apiKey: string, lang
     return NextResponse.json({ error: `AssemblyAI submission failed: ${message}` }, { status: 502 });
   }
 
-  // 3. Poll until complete (max 10 minutes)
+  // 3. Poll until complete (max 30 minutes — 1-hour audio takes ~15-20 min)
   const pollUrl = `https://api.assemblyai.com/v2/transcript/${transcriptId}`;
-  const deadline = Date.now() + 10 * 60 * 1000;
+  const deadline = Date.now() + 30 * 60 * 1000;
 
   while (Date.now() < deadline) {
     await new Promise((r) => setTimeout(r, 3000));
@@ -230,8 +232,9 @@ async function transcribeWithAssemblyAI(formData: FormData, apiKey: string, lang
     try {
       const pollRes = await fetch(pollUrl, {
         headers: { authorization: apiKey },
-        signal: AbortSignal.timeout(15_000),
+        signal: AbortSignal.timeout(30_000),
       });
+      if (!pollRes.ok) { continue; }
       result = await pollRes.json();
     } catch {
       continue;
@@ -255,7 +258,7 @@ async function transcribeWithAssemblyAI(formData: FormData, apiKey: string, lang
     }
   }
 
-  return NextResponse.json({ error: "AssemblyAI timed out after 10 minutes" }, { status: 504 });
+  return NextResponse.json({ error: "AssemblyAI timed out after 30 minutes. The recording may be too long — try a shorter clip." }, { status: 504 });
 }
 
 async function transcribeWithWhisper(
