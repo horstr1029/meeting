@@ -3,12 +3,13 @@
 import { useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 
-type Provider = "groq" | "whisper" | "webspeech";
+type Provider = "groq" | "assemblyai" | "whisper" | "webspeech";
 type TestState = "idle" | "testing" | "ok" | "error";
 
 interface Settings {
   transcriptionProvider: Provider;
   groqApiKey: string;
+  assemblyAiApiKey: string;
   whisperHost: string;
   whisperPort: string;
   whisperPath: string;
@@ -26,6 +27,7 @@ interface Settings {
 const defaultSettings: Settings = {
   transcriptionProvider: "groq",
   groqApiKey: "",
+  assemblyAiApiKey: "",
   whisperHost: "whisper", whisperPort: "9000", whisperPath: "/v1/audio/transcriptions",
   whisperModel: "whisper-1", whisperLang: "", whisperProto: "http",
   ollamaHost: "172.17.0.1", ollamaPort: "11211",
@@ -51,6 +53,8 @@ export default function SettingsPage() {
   const [saved, setSaved] = useState(false);
   const [groqTest, setGroqTest] = useState<TestState>("idle");
   const [groqError, setGroqError] = useState("");
+  const [assemblyTest, setAssemblyTest] = useState<TestState>("idle");
+  const [assemblyError, setAssemblyError] = useState("");
   const [ollamaTest, setOllamaTest] = useState<TestState>("idle");
   const [ollamaError, setOllamaError] = useState("");
   const [ollamaModels, setOllamaModels] = useState<string[]>([]);
@@ -74,6 +78,23 @@ export default function SettingsPage() {
     setSaving(false);
     setSaved(true);
     setTimeout(() => setSaved(false), 2000);
+  };
+
+  const testAssemblyAI = async () => {
+    setAssemblyTest("testing");
+    setAssemblyError("");
+    const res = await fetch("/api/test-connection", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "assemblyai", assemblyAiApiKey: settings.assemblyAiApiKey }),
+    });
+    const data = await res.json() as { ok: boolean; error?: string };
+    if (data.ok) {
+      setAssemblyTest("ok");
+    } else {
+      setAssemblyTest("error");
+      setAssemblyError(data.error ?? "Unknown error");
+    }
   };
 
   const testGroq = async () => {
@@ -140,15 +161,20 @@ export default function SettingsPage() {
           <div className="bg-gray-900 rounded-xl p-5 border border-gray-800 space-y-4">
             <div>
               <label className="text-sm text-gray-400 block mb-2">Provider</label>
-              <div className="flex gap-2">
-                {(["groq", "whisper", "webspeech"] as Provider[]).map((p) => (
+              <div className="grid grid-cols-2 gap-2">
+                {([
+                  ["groq", "Groq (fast)"],
+                  ["assemblyai", "AssemblyAI (diarize)"],
+                  ["whisper", "Self-hosted"],
+                  ["webspeech", "Web Speech"],
+                ] as [Provider, string][]).map(([p, label]) => (
                   <button key={p} onClick={() => set("transcriptionProvider", p)}
-                    className={`flex-1 py-2 rounded-lg text-sm border transition ${
+                    className={`py-2 rounded-lg text-sm border transition ${
                       settings.transcriptionProvider === p
                         ? "border-blue-500 bg-blue-950 text-blue-300"
                         : "border-gray-700 text-gray-400 hover:border-gray-500"
                     }`}>
-                    {p === "groq" ? "Groq (free)" : p === "whisper" ? "Self-hosted" : "Web Speech"}
+                    {label}
                   </button>
                 ))}
               </div>
@@ -169,6 +195,41 @@ export default function SettingsPage() {
                     <p className="text-xs text-red-400">{groqError}</p>
                   )}
                   <p className="text-xs text-gray-500">Get a free key at console.groq.com</p>
+                </div>
+                <div>
+                  <label className="text-xs text-gray-500 block mb-1">Language (leave blank for auto-detect)</label>
+                  <select value={settings.whisperLang} onChange={(e) => set("whisperLang", e.target.value)}
+                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500">
+                    <option value="">Auto-detect</option>
+                    <option value="en">English</option>
+                    <option value="af">Afrikaans</option>
+                    <option value="fr">French</option>
+                    <option value="de">German</option>
+                    <option value="es">Spanish</option>
+                    <option value="pt">Portuguese</option>
+                    <option value="nl">Dutch</option>
+                    <option value="zu">Zulu</option>
+                    <option value="xh">Xhosa</option>
+                  </select>
+                </div>
+              </div>
+            )}
+
+            {settings.transcriptionProvider === "assemblyai" && (
+              <div className="space-y-3">
+                <div className="space-y-2">
+                  <label className="text-sm text-gray-400 block">AssemblyAI API Key</label>
+                  <div className="flex gap-2">
+                    <input type="password" value={settings.assemblyAiApiKey}
+                      onChange={(e) => { set("assemblyAiApiKey", e.target.value); setAssemblyTest("idle"); }}
+                      placeholder="Enter your AssemblyAI key…"
+                      className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500" />
+                    <TestButton state={assemblyTest} onClick={testAssemblyAI} label="Test" />
+                  </div>
+                  {assemblyTest === "error" && (
+                    <p className="text-xs text-red-400">{assemblyError}</p>
+                  )}
+                  <p className="text-xs text-gray-500">Free tier: 100 hours/month · app.assemblyai.com</p>
                 </div>
                 <div>
                   <label className="text-xs text-gray-500 block mb-1">Language (leave blank for auto-detect)</label>

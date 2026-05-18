@@ -48,9 +48,10 @@ model UserSettings {
   id                      String  @id @default(cuid())
   userId                  String  @unique
   user                    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
-  // Transcription provider: "whisper" | "groq" | "webspeech"
+  // Transcription provider: "whisper" | "groq" | "webspeech" | "assemblyai"
   transcriptionProvider   String  @default("groq")
   groqApiKey              String  @default("")
+  assemblyAiApiKey        String  @default("")
   whisperHost             String  @default("whisper")
   whisperPort             String  @default("9000")
   whisperPath             String  @default("/v1/audio/transcriptions")

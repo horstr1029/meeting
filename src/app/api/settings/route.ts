@@ -16,10 +16,10 @@ export async function GET() {
     update: {},
   });
 
-  // Never expose the API key in full — mask it
   return NextResponse.json({
     ...settings,
     groqApiKey: settings.groqApiKey ? `${settings.groqApiKey.slice(0, 6)}${"*".repeat(20)}` : "",
+    assemblyAiApiKey: settings.assemblyAiApiKey ? `${settings.assemblyAiApiKey.slice(0, 4)}${"*".repeat(20)}` : "",
   });
 }
 
@@ -40,9 +40,11 @@ export async function PUT(req: NextRequest) {
     return NextResponse.json({ error: "Invalid transcription provider" }, { status: 400 });
   }
 
-  // Don't overwrite the stored key if the client sends back the masked value
   if (typeof body.groqApiKey === "string" && body.groqApiKey.includes("*")) {
     delete body.groqApiKey;
+  }
+  if (typeof body.assemblyAiApiKey === "string" && body.assemblyAiApiKey.includes("*")) {
+    delete body.assemblyAiApiKey;
   }
 
   // Strip read-only fields

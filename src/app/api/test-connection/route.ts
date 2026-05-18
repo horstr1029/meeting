@@ -11,6 +11,34 @@ export async function POST(req: NextRequest) {
   const body = await req.json().catch(() => ({}));
   const { type } = body as { type: string };
 
+  if (type === "assemblyai") {
+    let apiKey: string = body.assemblyAiApiKey ?? "";
+    if (!apiKey || apiKey.includes("*")) {
+      const stored = await prisma.userSettings.findUnique({
+        where: { userId: session.user.id as string },
+        select: { assemblyAiApiKey: true },
+      });
+      apiKey = stored?.assemblyAiApiKey ?? "";
+    }
+    if (!apiKey) {
+      return NextResponse.json({ ok: false, error: "No API key configured" });
+    }
+    try {
+      const res = await fetch("https://api.assemblyai.com/v2/transcript", {
+        method: "GET",
+        headers: { authorization: apiKey },
+        signal: AbortSignal.timeout(8000),
+      });
+      // 200 or 400 both mean the key is valid; 401 means invalid
+      if (res.status === 401) {
+        return NextResponse.json({ ok: false, error: "Invalid API key" });
+      }
+      return NextResponse.json({ ok: true });
+    } catch (e) {
+      return NextResponse.json({ ok: false, error: e instanceof Error ? e.message : "Connection failed" });
+    }
+  }
+
   if (type === "groq") {
     // Resolve API key: use body value unless it's masked, then fall back to stored
     let apiKey: string = body.groqApiKey ?? "";
