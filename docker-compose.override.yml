@@ -11,9 +11,10 @@ services:
       - "5434:5432"   # 5432 and 5433 are taken by other apps
 
   whisper:
-    image: onerahmet/openai-whisper-asr-webservice:latest   # CPU image (no GPU override needed separately)
+    image: onerahmet/openai-whisper-asr-webservice:latest
     deploy:
-      resources: {}   # Remove GPU requirement
+      resources:
+        reservations: {}   # Clears GPU device requirement — CPU-only server
 
   # Ollama already running at 172.17.0.1:11211 — no container needed
   ollama:
