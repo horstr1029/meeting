@@ -28,6 +28,8 @@ model Meeting {
   transcript  String?      @db.Text
   minutes     String?      @db.Text
   language    String       @default("en")
+  attendees   String       @default("")
+  agenda      String?      @db.Text
   createdAt   DateTime     @default(now())
   updatedAt   DateTime     @updatedAt
   actionItems ActionItem[]
@@ -39,6 +41,7 @@ model ActionItem {
   meeting   Meeting   @relation(fields: [meetingId], references: [id], onDelete: Cascade)
   text      String
   assignee  String?
+  priority  String    @default("medium")
   dueDate   DateTime?
   done      Boolean   @default(false)
   createdAt DateTime  @default(now())

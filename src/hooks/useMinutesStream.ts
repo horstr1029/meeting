@@ -4,29 +4,52 @@ import { useCallback, useState } from "react";
 
 type Language = "english" | "afrikaans";
 
+interface GenerateOptions {
+  attendees?: string;
+  agenda?: string;
+  customPrompt?: string;
+}
+
 export function useMinutesStream() {
   const [minutes, setMinutes] = useState("");
   const [streaming, setStreaming] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const generate = useCallback(async (transcript: string, language: Language) => {
+  const generate = useCallback(async (
+    transcript: string,
+    language: Language,
+    options: GenerateOptions = {}
+  ) => {
     setError(null);
     setMinutes("");
     setStreaming(true);
 
-    const languageInstruction =
-      language === "afrikaans"
-        ? `INSTRUKSIES:
+    const { attendees, agenda, customPrompt } = options;
+
+    let prompt: string;
+
+    if (customPrompt) {
+      // Use custom prompt verbatim, inject transcript at the end
+      prompt = `${customPrompt}\n\nTranscript:\n${transcript}`;
+    } else {
+      const languageInstruction =
+        language === "afrikaans"
+          ? `INSTRUKSIES:
 1. Die transkripsie kan in Afrikaans, Engels of beide wees.
 2. Genereer die finale Notule in AFRIKAANS.
 3. Handhaaf 'n professionele toon.`
-        : `INSTRUCTIONS:
+          : `INSTRUCTIONS:
 1. The transcript may be in Afrikaans, English, or both (code-switching).
 2. Generate the final Meeting Minutes in ENGLISH.
 3. Ensure all Afrikaans terms or decisions are accurately translated.
 4. Maintain a professional tone.`;
 
-    const prompt = `${languageInstruction}
+      const metaLines: string[] = [];
+      if (attendees) metaLines.push(`Attendees: ${attendees}`);
+      if (agenda) metaLines.push(`Agenda/Notes: ${agenda}`);
+      const metaSection = metaLines.length > 0 ? `\n\nMeeting Context:\n${metaLines.join("\n")}` : "";
+
+      prompt = `${languageInstruction}${metaSection}
 
 You are a professional meeting secretary. Analyze the transcript below and produce structured meeting minutes with:
 - Meeting summary
@@ -36,6 +59,7 @@ You are a professional meeting secretary. Analyze the transcript below and produ
 
 Transcript:
 ${transcript}`;
+    }
 
     try {
       const res = await fetch("/api/generate", {
