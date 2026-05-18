@@ -32,7 +32,7 @@ services:
       - internal
 
   whisper:
-    image: onerahmet/openai-whisper-asr-webservice:latest-gpu
+    image: onerahmet/openai-whisper-asr-webservice:latest
     restart: unless-stopped
     environment:
       ASR_MODEL: ${WHISPER_MODEL:-base}
@@ -41,13 +41,6 @@ services:
       - whisper_models:/root/.cache/whisper
     ports:
       - "9000:9000"
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
     networks:
       - internal
 
@@ -58,19 +51,13 @@ services:
       - ollama_models:/root/.ollama
     ports:
       - "11434:11434"
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all
-              capabilities: [gpu]
     networks:
       - internal
 
   nginx:
     image: nginx:alpine
     restart: unless-stopped
+    profiles: ["nginx"]
     ports:
       - "80:80"
       - "443:443"
