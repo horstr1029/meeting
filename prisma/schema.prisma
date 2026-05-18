@@ -1,0 +1,68 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id           String        @id @default(cuid())
+  name         String?
+  email        String        @unique
+  passwordHash String
+  role         String        @default("user")
+  createdAt    DateTime      @default(now())
+  meetings     Meeting[]
+  settings     UserSettings?
+}
+
+model Meeting {
+  id          String       @id @default(cuid())
+  userId      String
+  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  title       String       @default("Untitled Meeting")
+  date        DateTime     @default(now())
+  audioPath   String?
+  transcript  String?      @db.Text
+  minutes     String?      @db.Text
+  language    String       @default("en")
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+  actionItems ActionItem[]
+}
+
+model ActionItem {
+  id        String    @id @default(cuid())
+  meetingId String
+  meeting   Meeting   @relation(fields: [meetingId], references: [id], onDelete: Cascade)
+  text      String
+  assignee  String?
+  dueDate   DateTime?
+  done      Boolean   @default(false)
+  createdAt DateTime  @default(now())
+}
+
+model UserSettings {
+  id                      String  @id @default(cuid())
+  userId                  String  @unique
+  user                    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  // Transcription provider: "whisper" | "groq" | "webspeech"
+  transcriptionProvider   String  @default("groq")
+  groqApiKey              String  @default("")
+  whisperHost             String  @default("whisper")
+  whisperPort             String  @default("9000")
+  whisperPath             String  @default("/v1/audio/transcriptions")
+  whisperModel            String  @default("whisper-1")
+  whisperLang             String  @default("")
+  whisperProto            String  @default("http")
+  ollamaHost              String  @default("ollama")
+  ollamaPort              String  @default("11434")
+  ollamaModel             String  @default("llama3.2:latest")
+  ollamaProto             String  @default("http")
+  audioFormat             String  @default("audio/webm")
+  theme                   String  @default("dark")
+  useProxy                Boolean @default(true)
+  lowMemoryMode           Boolean @default(true)
+}

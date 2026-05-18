@@ -1,0 +1,13 @@
+# CPU-only override — use when no NVIDIA GPU is available:
+#   docker compose -f docker-compose.yml -f docker-compose.cpu.yml up -d
+
+services:
+  whisper:
+    image: onerahmet/openai-whisper-asr-webservice:latest
+    deploy:
+      resources: {}
+
+  ollama:
+    image: ollama/ollama:latest
+    deploy:
+      resources: {}
