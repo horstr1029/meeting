@@ -155,19 +155,37 @@ export default function SettingsPage() {
             </div>
 
             {settings.transcriptionProvider === "groq" && (
-              <div className="space-y-2">
-                <label className="text-sm text-gray-400 block">Groq API Key</label>
-                <div className="flex gap-2">
-                  <input type="password" value={settings.groqApiKey}
-                    onChange={(e) => { set("groqApiKey", e.target.value); setGroqTest("idle"); }}
-                    placeholder="gsk_..."
-                    className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500" />
-                  <TestButton state={groqTest} onClick={testGroq} label="Test" />
+              <div className="space-y-3">
+                <div className="space-y-2">
+                  <label className="text-sm text-gray-400 block">Groq API Key</label>
+                  <div className="flex gap-2">
+                    <input type="password" value={settings.groqApiKey}
+                      onChange={(e) => { set("groqApiKey", e.target.value); setGroqTest("idle"); }}
+                      placeholder="gsk_..."
+                      className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500" />
+                    <TestButton state={groqTest} onClick={testGroq} label="Test" />
+                  </div>
+                  {groqTest === "error" && (
+                    <p className="text-xs text-red-400">{groqError}</p>
+                  )}
+                  <p className="text-xs text-gray-500">Get a free key at console.groq.com</p>
                 </div>
-                {groqTest === "error" && (
-                  <p className="text-xs text-red-400">{groqError}</p>
-                )}
-                <p className="text-xs text-gray-500">Get a free key at console.groq.com</p>
+                <div>
+                  <label className="text-xs text-gray-500 block mb-1">Language (leave blank for auto-detect)</label>
+                  <select value={settings.whisperLang} onChange={(e) => set("whisperLang", e.target.value)}
+                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500">
+                    <option value="">Auto-detect</option>
+                    <option value="en">English</option>
+                    <option value="af">Afrikaans</option>
+                    <option value="fr">French</option>
+                    <option value="de">German</option>
+                    <option value="es">Spanish</option>
+                    <option value="pt">Portuguese</option>
+                    <option value="nl">Dutch</option>
+                    <option value="zu">Zulu</option>
+                    <option value="xh">Xhosa</option>
+                  </select>
+                </div>
               </div>
             )}
 

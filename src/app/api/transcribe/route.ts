@@ -32,11 +32,18 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Invalid form data" }, { status: 400 });
   }
 
+  // Allow per-request language override from the form
+  const langOverride = formData.get("langOverride");
+  if (langOverride) {
+    formData.delete("langOverride");
+  }
+  const language = (langOverride as string | null) ?? settings.whisperLang;
+
   if (transcriptionProvider === "groq") {
-    return transcribeWithGroq(formData, settings.groqApiKey, settings.whisperLang);
+    return transcribeWithGroq(formData, settings.groqApiKey, language);
   }
 
-  return transcribeWithWhisper(formData, settings);
+  return transcribeWithWhisper(formData, { ...settings, whisperLang: language });
 }
 
 async function transcribeWithGroq(

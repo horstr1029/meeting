@@ -24,6 +24,7 @@ export default function RecordPage() {
 
   const [isTranscribing, setIsTranscribing] = useState(false);
   const [transcribeError, setTranscribeError] = useState<string | null>(null);
+  const [langOverride, setLangOverride] = useState("");
 
   const audioBlobUrlRef = useRef<string | null>(null);
 
@@ -81,6 +82,7 @@ export default function RecordPage() {
 
       const formData = new FormData();
       formData.append("file", blobToSend, "audio.wav");
+      if (langOverride) formData.append("langOverride", langOverride);
 
       const transcribeRes = await fetch("/api/transcribe", {
         method: "POST",
@@ -302,6 +304,22 @@ export default function RecordPage() {
         {/* Transcribe button */}
         {activeBlob && (
           <div className="space-y-3">
+            <div className="flex items-center gap-3">
+              <label className="text-xs text-gray-500 shrink-0">Language</label>
+              <select value={langOverride} onChange={(e) => setLangOverride(e.target.value)}
+                className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white">
+                <option value="">From settings (default)</option>
+                <option value="en">English</option>
+                <option value="af">Afrikaans</option>
+                <option value="fr">French</option>
+                <option value="de">German</option>
+                <option value="es">Spanish</option>
+                <option value="pt">Portuguese</option>
+                <option value="nl">Dutch</option>
+                <option value="zu">Zulu</option>
+                <option value="xh">Xhosa</option>
+              </select>
+            </div>
             {transcribeError && (
               <p className="text-sm text-red-400 bg-red-950 px-3 py-2 rounded-lg">{transcribeError}</p>
             )}
