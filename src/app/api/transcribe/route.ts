@@ -215,50 +215,8 @@ async function transcribeWithAssemblyAI(formData: FormData, apiKey: string, lang
     return NextResponse.json({ error: `AssemblyAI submission failed: ${message}` }, { status: 502 });
   }
 
-  // 3. Poll until complete (max 30 minutes — 1-hour audio takes ~15-20 min)
-  const pollUrl = `https://api.assemblyai.com/v2/transcript/${transcriptId}`;
-  const deadline = Date.now() + 30 * 60 * 1000;
-
-  while (Date.now() < deadline) {
-    await new Promise((r) => setTimeout(r, 3000));
-
-    let result: {
-      status: string;
-      error?: string;
-      text?: string;
-      utterances?: { speaker: string; text: string }[];
-    };
-
-    try {
-      const pollRes = await fetch(pollUrl, {
-        headers: { authorization: apiKey },
-        signal: AbortSignal.timeout(30_000),
-      });
-      if (!pollRes.ok) { continue; }
-      result = await pollRes.json();
-    } catch {
-      continue;
-    }
-
-    if (result.status === "error") {
-      return NextResponse.json({ error: result.error ?? "AssemblyAI transcription failed" }, { status: 502 });
-    }
-
-    if (result.status === "completed") {
-      // Format with speaker labels if available
-      let text: string;
-      if (result.utterances && result.utterances.length > 0) {
-        text = result.utterances
-          .map((u) => `[Speaker ${u.speaker}]: ${u.text}`)
-          .join("\n\n");
-      } else {
-        text = result.text ?? "";
-      }
-      return NextResponse.json({ text });
-    }
-  }
-
-  return NextResponse.json({ error: "AssemblyAI timed out after 30 minutes. The recording may be too long — try a shorter clip." }, { status: 504 });
+  // Return job ID immediately — client polls /api/transcribe/assemblyai-status
+  return NextResponse.json({ assemblyJobId: transcriptId });
 }
 
 async function transcribeWithWhisper(

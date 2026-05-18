@@ -26,6 +26,7 @@ export default function RecordPage() {
   const [uploadAudioUrl, setUploadAudioUrl] = useState<string | null>(null);
 
   const [isTranscribing, setIsTranscribing] = useState(false);
+  const [transcribeStatus, setTranscribeStatus] = useState<string>("");
   const [transcribeError, setTranscribeError] = useState<string | null>(null);
   const [langOverride, setLangOverride] = useState("");
 
@@ -69,6 +70,7 @@ export default function RecordPage() {
     if (!activeBlob) return;
     setIsTranscribing(true);
     setTranscribeError(null);
+    setTranscribeStatus("Preparing audio…");
 
     try {
       const meetingRes = await fetch("/api/meetings", {
@@ -81,16 +83,17 @@ export default function RecordPage() {
 
       let blobToSend = activeBlob;
       try {
+        setTranscribeStatus("Converting audio…");
         blobToSend = await downsampleAudio(activeBlob, 16000);
       } catch {
         // Fall back to original blob if downsampling fails
       }
 
-
       const formData = new FormData();
       formData.append("file", blobToSend, "audio.wav");
       if (langOverride) formData.append("langOverride", langOverride);
 
+      setTranscribeStatus("Uploading…");
       const transcribeRes = await fetch("/api/transcribe", {
         method: "POST",
         body: formData,
@@ -109,7 +112,16 @@ export default function RecordPage() {
       }
 
       const data = await transcribeRes.json();
-      const transcript: string = data.text ?? data.transcript ?? "";
+
+      let transcript: string;
+
+      if (data.assemblyJobId) {
+        // AssemblyAI async — poll until done
+        setTranscribeStatus("Transcribing… (this can take several minutes for long recordings)");
+        transcript = await pollAssemblyAI(data.assemblyJobId);
+      } else {
+        transcript = data.text ?? data.transcript ?? "";
+      }
 
       await fetch(`/api/meetings/${meeting.id}`, {
         method: "PUT",
@@ -125,7 +137,27 @@ export default function RecordPage() {
       toast(msg, "error");
     } finally {
       setIsTranscribing(false);
+      setTranscribeStatus("");
     }
+  };
+
+  const pollAssemblyAI = async (jobId: string): Promise<string> => {
+    const deadline = Date.now() + 45 * 60 * 1000; // 45-minute client-side limit
+    let attempts = 0;
+    while (Date.now() < deadline) {
+      await new Promise((r) => setTimeout(r, 5000));
+      attempts++;
+      setTranscribeStatus(`Transcribing… (${Math.floor(attempts * 5 / 60)}m ${(attempts * 5) % 60}s)`);
+      const res = await fetch("/api/transcribe/assemblyai-status", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ jobId }),
+      });
+      const result = await res.json() as { status: string; text?: string; error?: string };
+      if (result.status === "completed") return result.text ?? "";
+      if (result.status === "error") throw new Error(result.error ?? "AssemblyAI transcription failed");
+    }
+    throw new Error("Transcription timed out after 45 minutes.");
   };
 
   const isRecording = recorder.state === "recording";
@@ -346,6 +378,12 @@ export default function RecordPage() {
             </div>
             {transcribeError && (
               <p className="text-sm text-red-400 bg-red-950/50 px-3 py-2 rounded-lg border border-red-900/50">{transcribeError}</p>
+            )}
+            {isTranscribing && transcribeStatus && (
+              <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-violet-950/30 border border-violet-800/40">
+                <span className="w-2 h-2 rounded-full bg-violet-400 animate-pulse flex-shrink-0" />
+                <p className="text-sm text-violet-300">{transcribeStatus}</p>
+              </div>
             )}
             <button
               onClick={handleTranscribe}
