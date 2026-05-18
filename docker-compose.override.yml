@@ -2,6 +2,10 @@
 # Applied automatically by docker compose
 
 services:
+  app:
+    ports:
+      - "3007:3000"
+
   db:
     ports:
       - "5434:5432"   # 5432 and 5433 are taken by other apps
