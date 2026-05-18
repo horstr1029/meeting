@@ -135,7 +135,15 @@ async function transcribeWithGroq(formData: FormData, apiKey: string, language: 
 
     // Large file — split WAV and transcribe chunks sequentially
     const buffer = await audioFile.arrayBuffer();
-    const chunks = splitWavBlob(buffer);
+    let chunks: Blob[];
+    try {
+      chunks = splitWavBlob(buffer);
+    } catch {
+      const sizeMB = Math.round(audioFile.size / 1024 / 1024);
+      return NextResponse.json({
+        error: `File is ${sizeMB} MB and exceeds Groq's 25 MB limit. Auto-splitting requires WAV format — the browser may not have converted your file. Try re-uploading or switch to self-hosted Whisper.`,
+      }, { status: 413 });
+    }
     const parts: string[] = [];
     for (const chunk of chunks) {
       parts.push(await groqTranscribeBlob(chunk, apiKey, language));
