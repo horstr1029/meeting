@@ -6,7 +6,8 @@ export default async function DashboardPage() {
   const session = await auth();
   const userId = session!.user!.id as string;
 
-  const [meetings, totalMeetings, withTranscript, withMinutes, pendingActions] = await Promise.all([
+  const now = new Date();
+  const [meetings, totalMeetings, withTranscript, pendingActions, overdueActions] = await Promise.all([
     prisma.meeting.findMany({
       where: { userId },
       orderBy: { date: "desc" },
@@ -15,8 +16,8 @@ export default async function DashboardPage() {
     }),
     prisma.meeting.count({ where: { userId } }),
     prisma.meeting.count({ where: { userId, transcript: { not: null } } }),
-    prisma.meeting.count({ where: { userId, minutes: { not: null } } }),
     prisma.actionItem.count({ where: { meeting: { userId }, done: false } }),
+    prisma.actionItem.count({ where: { meeting: { userId }, done: false, dueDate: { lt: now } } }),
   ]);
 
   return (
@@ -44,7 +45,7 @@ export default async function DashboardPage() {
           { icon: "🎙️", value: totalMeetings,  label: "MEETINGS",      color: "text-violet-400" },
           { icon: "📝", value: withTranscript,  label: "TRANSCRIPTS",   color: "text-violet-400" },
           { icon: "✅", value: pendingActions,  label: "PENDING TASKS", color: "text-emerald-400" },
-          { icon: "📑", value: withMinutes,     label: "MINUTES DONE",  color: "text-amber-400" },
+          { icon: "🔴", value: overdueActions,  label: "OVERDUE",       color: overdueActions > 0 ? "text-rose-400" : "text-[#4a4d6a]" },
         ].map(({ icon, value, label, color }) => (
           <div key={label} className="bg-[#181929] border border-[#252640] rounded-xl p-5">
             <span className="text-2xl">{icon}</span>

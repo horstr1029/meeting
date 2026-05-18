@@ -32,7 +32,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
   const existing = await getMeetingForUser(id, session.user.id as string);
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
-  let body: Partial<{ title: string; transcript: string; minutes: string; language: string; audioPath: string; attendees: string; agenda: string }>;
+  let body: Partial<{ title: string; transcript: string; minutes: string; language: string; audioPath: string; attendees: string; agenda: string; tags: string }>;
   try {
     body = await req.json();
   } catch {
@@ -49,6 +49,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       ...(body.audioPath !== undefined && { audioPath: body.audioPath }),
       ...(body.attendees !== undefined && { attendees: body.attendees }),
       ...(body.agenda !== undefined && { agenda: body.agenda }),
+      ...(body.tags !== undefined && { tags: body.tags }),
     },
   });
 

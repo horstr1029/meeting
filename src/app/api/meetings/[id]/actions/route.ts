@@ -48,7 +48,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
     return NextResponse.json({ error: "Not found" }, { status: 404 });
   }
 
-  let body: { text: string; assignee?: string; priority?: string };
+  let body: { text: string; assignee?: string; priority?: string; dueDate?: string };
   try { body = await req.json(); } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
@@ -62,6 +62,7 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
       text: body.text.trim(),
       assignee: body.assignee?.trim() || null,
       priority: body.priority ?? "medium",
+      dueDate: body.dueDate ? new Date(body.dueDate) : null,
     },
   });
 

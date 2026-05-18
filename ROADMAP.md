@@ -74,8 +74,42 @@
 - Audio format selector on Record page
 - Microphone list refresh button
 
-## Phase 11 — AI Chat Assistant
-- Chat sidebar on meeting detail page
-- Transcript used as context for questions
-- Streaming answers from Ollama
-- Chat history within session
+## Phase 11 — AI Chat Assistant *(skipped)*
+
+---
+
+## Phase 12 — Due Dates + Overdue Tracking 🔧 (current)
+- Due date picker on action items (add + display)
+- Overdue tasks highlighted red, due-today in amber
+- Dashboard overdue count stat
+
+## Phase 13 — Full-text Transcript Search
+- `/api/meetings?q=` searches title, transcript, attendees in DB
+- History page debounced API search
+- "Found in transcript" indicator on results
+
+## Phase 14 — Tags & Categories
+- `tags` field on meetings (comma-separated pills)
+- Inline tag editor on meeting detail page
+- Tag filter chips on history page
+
+## Phase 15 — Meeting Analytics
+- Charts: meetings per week, action item completion rate
+- Overdue trend over time
+
+## Phase 16 — SMTP Email Delivery
+- SMTP config in settings (host, port, user, password)
+- Send minutes email directly from app — no system mail client
+
+## Phase 17 — Live Transcription
+- Stream Groq Whisper during recording
+- Progressive transcript shown while recording
+
+## Phase 18 — Recurring Meeting Series
+- Group meetings under a named series
+- Action items carry forward if not completed
+- Running agenda inherited from prior session
+
+## Phase 19 — Webhook / n8n Integration
+- Webhook URL in settings
+- POST events: new meeting, transcription done, action items extracted

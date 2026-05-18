@@ -16,6 +16,7 @@ interface ActionItem {
   text: string;
   assignee: string | null;
   priority: string;
+  dueDate: string | null;
   done: boolean;
 }
 
@@ -28,6 +29,7 @@ interface Meeting {
   language: string;
   attendees: string;
   agenda: string | null;
+  tags: string;
   actionItems: ActionItem[];
 }
 
@@ -66,6 +68,7 @@ export default function MeetingPage() {
   const [newTaskText, setNewTaskText] = useState("");
   const [newTaskAssignee, setNewTaskAssignee] = useState("");
   const [newTaskPriority, setNewTaskPriority] = useState<Priority>("medium");
+  const [newTaskDueDate, setNewTaskDueDate] = useState("");
   const [addingTask, setAddingTask] = useState(false);
   const [showAddForm, setShowAddForm] = useState(false);
 
@@ -75,6 +78,9 @@ export default function MeetingPage() {
   const [agendaDraft, setAgendaDraft] = useState("");
   const [editingMeta, setEditingMeta] = useState(false);
   const [savingMeta, setSavingMeta] = useState(false);
+
+  // Tags
+  const [newTag, setNewTag] = useState("");
 
   const speechRef = useRef<SpeechSynthesisUtterance | null>(null);
 
@@ -235,15 +241,47 @@ Only output TASK lines. No other text.`;
     const res = await fetch(`/api/meetings/${id}/actions`, {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text: newTaskText, assignee: newTaskAssignee, priority: newTaskPriority }),
+      body: JSON.stringify({
+        text: newTaskText,
+        assignee: newTaskAssignee,
+        priority: newTaskPriority,
+        dueDate: newTaskDueDate || undefined,
+      }),
     });
     const item: ActionItem = await res.json();
     setActionItems((prev) => [...prev, item]);
     setNewTaskText("");
     setNewTaskAssignee("");
     setNewTaskPriority("medium");
+    setNewTaskDueDate("");
     setAddingTask(false);
     setShowAddForm(false);
+  };
+
+  const addTag = async (tag: string) => {
+    const clean = tag.trim().toLowerCase().replace(/[^a-z0-9-]/g, "");
+    if (!clean || !meeting) return;
+    const existing = meeting.tags ? meeting.tags.split(",").map((t) => t.trim()).filter(Boolean) : [];
+    if (existing.includes(clean)) return;
+    const updated = [...existing, clean].join(", ");
+    await fetch(`/api/meetings/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tags: updated }),
+    });
+    setMeeting((m) => m ? { ...m, tags: updated } : m);
+    setNewTag("");
+  };
+
+  const removeTag = async (tag: string) => {
+    if (!meeting) return;
+    const updated = meeting.tags.split(",").map((t) => t.trim()).filter((t) => t && t !== tag).join(", ");
+    await fetch(`/api/meetings/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ tags: updated }),
+    });
+    setMeeting((m) => m ? { ...m, tags: updated } : m);
   };
 
   const readAloud = () => {
@@ -279,6 +317,8 @@ Only output TASK lines. No other text.`;
 
   const wordCount = (meeting.transcript ?? "").trim().split(/\s+/).filter(Boolean).length;
   const attendeeList = meeting.attendees ? meeting.attendees.split(",").map((s) => s.trim()).filter(Boolean) : [];
+  const tagList = meeting.tags ? meeting.tags.split(",").map((t) => t.trim()).filter(Boolean) : [];
+  const today = new Date(); today.setHours(0, 0, 0, 0);
 
   return (
     <div className="min-h-full">
@@ -366,6 +406,24 @@ Only output TASK lines. No other text.`;
               </button>
             </div>
           )}
+
+          {/* Tags row */}
+          <div className="flex items-center gap-2 flex-wrap pb-1">
+            {tagList.map((tag) => (
+              <span key={tag} className="flex items-center gap-1 text-xs bg-indigo-950/50 text-indigo-300 px-2 py-0.5 rounded-full border border-indigo-800/40">
+                # {tag}
+                <button onClick={() => removeTag(tag)} className="text-indigo-500 hover:text-red-400 transition ml-0.5">×</button>
+              </span>
+            ))}
+            <form onSubmit={(e) => { e.preventDefault(); addTag(newTag); }} className="flex items-center">
+              <input
+                value={newTag}
+                onChange={(e) => setNewTag(e.target.value)}
+                placeholder="+ add tag"
+                className="text-xs bg-transparent text-[#6b6f8e] placeholder-[#3a3d5a] focus:outline-none w-16 focus:w-24 transition-all"
+              />
+            </form>
+          </div>
         </div>
 
         {/* Tabs */}
@@ -557,10 +615,12 @@ Only output TASK lines. No other text.`;
                   onKeyDown={(e) => e.key === "Enter" && addTask()}
                   placeholder={af ? "Taakbeskrywing…" : "Task description…"}
                   className={inputCls} />
-                <div className="flex gap-2">
+                <div className="flex gap-2 flex-wrap">
                   <input value={newTaskAssignee} onChange={(e) => setNewTaskAssignee(e.target.value)}
                     placeholder={af ? "Toegewys aan…" : "Assignee…"}
-                    className="flex-1 bg-[#252640] border border-[#2f3158] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-violet-500" />
+                    className="flex-1 min-w-28 bg-[#252640] border border-[#2f3158] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-violet-500" />
+                  <input type="date" value={newTaskDueDate} onChange={(e) => setNewTaskDueDate(e.target.value)}
+                    className="bg-[#252640] border border-[#2f3158] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-violet-500 [color-scheme:dark]" />
                   <select value={newTaskPriority} onChange={(e) => setNewTaskPriority(e.target.value as Priority)}
                     className="bg-[#252640] border border-[#2f3158] rounded-lg px-3 py-2 text-sm text-white">
                     <option value="high">{af ? "Hoog" : "High"}</option>
@@ -607,6 +667,21 @@ Only output TASK lines. No other text.`;
                             {p}
                           </span>
                           {item.assignee && <span className="text-xs text-[#6b6f8e]">→ {item.assignee}</span>}
+                          {item.dueDate && !item.done && (() => {
+                            const due = new Date(item.dueDate); due.setHours(0,0,0,0);
+                            const isOverdue = due < today;
+                            const isToday = due.getTime() === today.getTime();
+                            return (
+                              <span className={`text-xs px-1.5 py-0.5 rounded border ${
+                                isOverdue ? "bg-red-950/60 text-red-300 border-red-800/60" :
+                                isToday ? "bg-amber-950/60 text-amber-300 border-amber-800/60" :
+                                "bg-[#252640] text-[#8b8fa8] border-[#2f3158]"
+                              }`}>
+                                {isOverdue ? "⚠ " : isToday ? "📅 Today" : "📅 "}
+                                {!isToday && new Date(item.dueDate).toLocaleDateString("en-ZA", { day: "2-digit", month: "short" })}
+                              </span>
+                            );
+                          })()}
                         </div>
                       </div>
                       <button onClick={() => deleteAction(item.id)}
