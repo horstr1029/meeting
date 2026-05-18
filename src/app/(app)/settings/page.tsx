@@ -1,7 +1,6 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
 import { useToast } from "@/contexts/ToastContext";
 
 type Provider = "groq" | "assemblyai" | "whisper" | "webspeech";
@@ -72,14 +71,16 @@ const LANGUAGES = [
 
 function TestButton({ state, onClick, label }: { state: TestState; onClick: () => void; label?: string }) {
   const base = "px-3 py-1.5 rounded-lg text-xs font-medium border transition";
-  if (state === "testing") return <button disabled className={`${base} border-gray-600 text-gray-500`}>Testing…</button>;
-  if (state === "ok") return <button disabled className={`${base} border-green-700 bg-green-950 text-green-400`}>✓ Connected</button>;
-  if (state === "error") return <button onClick={onClick} className={`${base} border-red-700 bg-red-950 text-red-400`}>✗ Retry</button>;
-  return <button onClick={onClick} className={`${base} border-gray-600 text-gray-400 hover:border-gray-400 hover:text-white`}>{label ?? "Test"}</button>;
+  if (state === "testing") return <button disabled className={`${base} border-[#2f3158] text-[#6b6f8e]`}>Testing…</button>;
+  if (state === "ok") return <button disabled className={`${base} border-emerald-700 bg-emerald-950/50 text-emerald-400`}>✓ Connected</button>;
+  if (state === "error") return <button onClick={onClick} className={`${base} border-red-700 bg-red-950/50 text-red-400`}>✗ Retry</button>;
+  return <button onClick={onClick} className={`${base} border-[#252640] text-[#8b8fa8] hover:border-[#3a3c6a] hover:text-white`}>{label ?? "Test"}</button>;
 }
 
+const inputCls = "w-full bg-[#252640] border border-[#2f3158] rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-violet-500";
+const selectCls = "w-full bg-[#252640] border border-[#2f3158] rounded-lg px-3 py-2 text-sm text-white";
+
 export default function SettingsPage() {
-  const router = useRouter();
   const { toast } = useToast();
   const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [loading, setLoading] = useState(true);
@@ -178,35 +179,41 @@ export default function SettingsPage() {
     }
   };
 
-  if (loading) return <div className="min-h-screen bg-gray-950 flex items-center justify-center text-gray-400">Loading…</div>;
+  if (loading) return (
+    <div className="flex items-center justify-center py-20 text-[#8b8fa8]">Loading…</div>
+  );
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white">
-      <header className="flex items-center justify-between px-8 py-4 border-b border-gray-800">
-        <div className="flex items-center gap-3">
-          <button onClick={() => router.push("/dashboard")} className="text-gray-400 hover:text-white text-sm transition">← Dashboard</button>
-          <h1 className="text-xl font-bold">Settings</h1>
+    <div className="p-8">
+      <div className="max-w-2xl mx-auto space-y-8">
+        {/* Page header */}
+        <div className="flex items-start justify-between">
+          <div>
+            <h1 className="text-2xl font-bold text-white">Settings</h1>
+            <p className="text-sm text-[#8b8fa8] mt-1">Configure your AI providers and preferences</p>
+          </div>
+          <button
+            onClick={handleReset}
+            className={`text-xs px-3 py-1.5 rounded-lg border transition ${
+              confirmReset
+                ? "border-red-600 text-red-400 bg-red-950/50"
+                : "border-[#252640] text-[#6b6f8e] hover:border-[#3a3c6a] hover:text-[#c5c7e8]"
+            }`}
+          >
+            {confirmReset ? "Click again to confirm reset" : "Reset to defaults"}
+          </button>
         </div>
-        <button onClick={handleReset}
-          className={`text-xs px-3 py-1.5 rounded-lg border transition ${
-            confirmReset ? "border-red-600 text-red-400 bg-red-950" : "border-gray-700 text-gray-500 hover:border-gray-500 hover:text-gray-300"
-          }`}>
-          {confirmReset ? "Click again to confirm reset" : "Reset to defaults"}
-        </button>
-      </header>
-
-      <main className="max-w-2xl mx-auto px-8 py-8 space-y-8">
 
         {/* ── Transcription ── */}
         <section className="space-y-4">
-          <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Transcription</h2>
-          <div className="bg-gray-900 rounded-xl p-5 border border-gray-800 space-y-4">
+          <h2 className="text-xs font-semibold text-[#6b6f8e] uppercase tracking-wider">Transcription</h2>
+          <div className="bg-[#181929] rounded-xl p-5 border border-[#252640] space-y-4">
             <div>
-              <label className="text-sm text-gray-400 block mb-2">Provider</label>
+              <label className="text-sm text-[#8b8fa8] block mb-2">Provider</label>
               <div className="grid grid-cols-2 gap-2">
                 {([["groq","Groq (fast)"],["assemblyai","AssemblyAI (diarize)"],["whisper","Self-hosted"],["webspeech","Web Speech"]] as [Provider,string][]).map(([p, label]) => (
                   <button key={p} onClick={() => set("transcriptionProvider", p)}
-                    className={`py-2 rounded-lg text-sm border transition ${settings.transcriptionProvider === p ? "border-blue-500 bg-blue-950 text-blue-300" : "border-gray-700 text-gray-400 hover:border-gray-500"}`}>
+                    className={`py-2 rounded-lg text-sm border transition ${settings.transcriptionProvider === p ? "border-violet-500 bg-violet-950/50 text-violet-300" : "border-[#252640] text-[#8b8fa8] hover:border-[#3a3c6a]"}`}>
                     {label}
                   </button>
                 ))}
@@ -216,21 +223,20 @@ export default function SettingsPage() {
             {settings.transcriptionProvider === "groq" && (
               <div className="space-y-3">
                 <div className="space-y-2">
-                  <label className="text-sm text-gray-400 block">Groq API Key</label>
+                  <label className="text-sm text-[#8b8fa8] block">Groq API Key</label>
                   <div className="flex gap-2">
                     <input type="password" value={settings.groqApiKey}
                       onChange={(e) => { set("groqApiKey", e.target.value); setGroqTest("idle"); }}
                       placeholder="gsk_…"
-                      className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500" />
+                      className={inputCls} />
                     <TestButton state={groqTest} onClick={testGroq} label="Test" />
                   </div>
                   {groqTest === "error" && <p className="text-xs text-red-400">{groqError}</p>}
-                  <p className="text-xs text-gray-500">Get a free key at console.groq.com</p>
+                  <p className="text-xs text-[#4a4d6a]">Get a free key at console.groq.com</p>
                 </div>
                 <div>
-                  <label className="text-xs text-gray-500 block mb-1">Language</label>
-                  <select value={settings.whisperLang} onChange={(e) => set("whisperLang", e.target.value)}
-                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white">
+                  <label className="text-xs text-[#6b6f8e] block mb-1">Language</label>
+                  <select value={settings.whisperLang} onChange={(e) => set("whisperLang", e.target.value)} className={selectCls}>
                     {LANGUAGES.map((l) => <option key={l.value} value={l.value}>{l.label}</option>)}
                   </select>
                 </div>
@@ -240,21 +246,20 @@ export default function SettingsPage() {
             {settings.transcriptionProvider === "assemblyai" && (
               <div className="space-y-3">
                 <div className="space-y-2">
-                  <label className="text-sm text-gray-400 block">AssemblyAI API Key</label>
+                  <label className="text-sm text-[#8b8fa8] block">AssemblyAI API Key</label>
                   <div className="flex gap-2">
                     <input type="password" value={settings.assemblyAiApiKey}
                       onChange={(e) => { set("assemblyAiApiKey", e.target.value); setAssemblyTest("idle"); }}
                       placeholder="Enter your AssemblyAI key…"
-                      className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500" />
+                      className={inputCls} />
                     <TestButton state={assemblyTest} onClick={testAssemblyAI} label="Test" />
                   </div>
                   {assemblyTest === "error" && <p className="text-xs text-red-400">{assemblyError}</p>}
-                  <p className="text-xs text-gray-500">Free tier: 100 hours/month · app.assemblyai.com</p>
+                  <p className="text-xs text-[#4a4d6a]">Free tier: 100 hours/month · app.assemblyai.com</p>
                 </div>
                 <div>
-                  <label className="text-xs text-gray-500 block mb-1">Language</label>
-                  <select value={settings.whisperLang} onChange={(e) => set("whisperLang", e.target.value)}
-                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white">
+                  <label className="text-xs text-[#6b6f8e] block mb-1">Language</label>
+                  <select value={settings.whisperLang} onChange={(e) => set("whisperLang", e.target.value)} className={selectCls}>
                     {LANGUAGES.map((l) => <option key={l.value} value={l.value}>{l.label}</option>)}
                   </select>
                 </div>
@@ -265,40 +270,34 @@ export default function SettingsPage() {
               <div className="space-y-3">
                 <div className="grid grid-cols-2 gap-3">
                   <div>
-                    <label className="text-xs text-gray-500 block mb-1">Host</label>
-                    <input value={settings.whisperHost} onChange={(e) => set("whisperHost", e.target.value)}
-                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500" />
+                    <label className="text-xs text-[#6b6f8e] block mb-1">Host</label>
+                    <input value={settings.whisperHost} onChange={(e) => set("whisperHost", e.target.value)} className={inputCls} />
                   </div>
                   <div>
-                    <label className="text-xs text-gray-500 block mb-1">Port</label>
-                    <input value={settings.whisperPort} onChange={(e) => set("whisperPort", e.target.value)}
-                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500" />
+                    <label className="text-xs text-[#6b6f8e] block mb-1">Port</label>
+                    <input value={settings.whisperPort} onChange={(e) => set("whisperPort", e.target.value)} className={inputCls} />
                   </div>
                   <div className="col-span-2">
-                    <label className="text-xs text-gray-500 block mb-1">Endpoint path</label>
-                    <select value={settings.whisperPath} onChange={(e) => set("whisperPath", e.target.value)}
-                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white">
+                    <label className="text-xs text-[#6b6f8e] block mb-1">Endpoint path</label>
+                    <select value={settings.whisperPath} onChange={(e) => set("whisperPath", e.target.value)} className={selectCls}>
                       {WHISPER_PATHS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
                     </select>
                   </div>
                   <div>
-                    <label className="text-xs text-gray-500 block mb-1">Model</label>
-                    <select value={settings.whisperModel} onChange={(e) => set("whisperModel", e.target.value)}
-                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white">
+                    <label className="text-xs text-[#6b6f8e] block mb-1">Model</label>
+                    <select value={settings.whisperModel} onChange={(e) => set("whisperModel", e.target.value)} className={selectCls}>
                       {WHISPER_MODELS.map((m) => <option key={m} value={m}>{m}</option>)}
                     </select>
                   </div>
                   <div>
-                    <label className="text-xs text-gray-500 block mb-1">Language</label>
-                    <select value={settings.whisperLang} onChange={(e) => set("whisperLang", e.target.value)}
-                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white">
+                    <label className="text-xs text-[#6b6f8e] block mb-1">Language</label>
+                    <select value={settings.whisperLang} onChange={(e) => set("whisperLang", e.target.value)} className={selectCls}>
                       {LANGUAGES.map((l) => <option key={l.value} value={l.value}>{l.label}</option>)}
                     </select>
                   </div>
                   <div>
-                    <label className="text-xs text-gray-500 block mb-1">Protocol</label>
-                    <select value={settings.whisperProto} onChange={(e) => set("whisperProto", e.target.value)}
-                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white">
+                    <label className="text-xs text-[#6b6f8e] block mb-1">Protocol</label>
+                    <select value={settings.whisperProto} onChange={(e) => set("whisperProto", e.target.value)} className={selectCls}>
                       <option value="http">HTTP</option>
                       <option value="https">HTTPS</option>
                     </select>
@@ -308,7 +307,7 @@ export default function SettingsPage() {
             )}
 
             {settings.transcriptionProvider === "webspeech" && (
-              <p className="text-sm text-yellow-400 bg-yellow-950 px-3 py-2 rounded-lg">
+              <p className="text-sm text-amber-400 bg-amber-950/40 px-3 py-2 rounded-lg border border-amber-900/40">
                 Web Speech API runs in the browser (Chrome only). No file upload — live speech only.
               </p>
             )}
@@ -317,44 +316,39 @@ export default function SettingsPage() {
 
         {/* ── Ollama ── */}
         <section className="space-y-4">
-          <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Ollama (Minutes Generation)</h2>
-          <div className="bg-gray-900 rounded-xl p-5 border border-gray-800 space-y-4">
+          <h2 className="text-xs font-semibold text-[#6b6f8e] uppercase tracking-wider">Ollama (Minutes Generation)</h2>
+          <div className="bg-[#181929] rounded-xl p-5 border border-[#252640] space-y-4">
             <div className="grid grid-cols-2 gap-3">
               <div>
-                <label className="text-xs text-gray-500 block mb-1">Host</label>
-                <input value={settings.ollamaHost} onChange={(e) => { set("ollamaHost", e.target.value); setOllamaTest("idle"); }}
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500" />
+                <label className="text-xs text-[#6b6f8e] block mb-1">Host</label>
+                <input value={settings.ollamaHost} onChange={(e) => { set("ollamaHost", e.target.value); setOllamaTest("idle"); }} className={inputCls} />
               </div>
               <div>
-                <label className="text-xs text-gray-500 block mb-1">Port</label>
-                <input value={settings.ollamaPort} onChange={(e) => { set("ollamaPort", e.target.value); setOllamaTest("idle"); }}
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500" />
+                <label className="text-xs text-[#6b6f8e] block mb-1">Port</label>
+                <input value={settings.ollamaPort} onChange={(e) => { set("ollamaPort", e.target.value); setOllamaTest("idle"); }} className={inputCls} />
               </div>
               <div>
-                <label className="text-xs text-gray-500 block mb-1">Protocol</label>
-                <select value={settings.ollamaProto} onChange={(e) => { set("ollamaProto", e.target.value); setOllamaTest("idle"); }}
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white">
+                <label className="text-xs text-[#6b6f8e] block mb-1">Protocol</label>
+                <select value={settings.ollamaProto} onChange={(e) => { set("ollamaProto", e.target.value); setOllamaTest("idle"); }} className={selectCls}>
                   <option value="http">HTTP</option>
                   <option value="https">HTTPS</option>
                 </select>
               </div>
               <div>
-                <label className="text-xs text-gray-500 block mb-1">Model</label>
+                <label className="text-xs text-[#6b6f8e] block mb-1">Model</label>
                 {ollamaModels.length > 0 ? (
-                  <select value={settings.ollamaModel} onChange={(e) => set("ollamaModel", e.target.value)}
-                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white">
+                  <select value={settings.ollamaModel} onChange={(e) => set("ollamaModel", e.target.value)} className={selectCls}>
                     {ollamaModels.map((m) => <option key={m} value={m}>{m}</option>)}
                   </select>
                 ) : (
-                  <input value={settings.ollamaModel} onChange={(e) => set("ollamaModel", e.target.value)}
-                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500" />
+                  <input value={settings.ollamaModel} onChange={(e) => set("ollamaModel", e.target.value)} className={inputCls} />
                 )}
               </div>
             </div>
             <div className="flex items-center gap-3">
               <TestButton state={ollamaTest} onClick={testOllama} label="Test Connection" />
               {ollamaTest === "ok" && ollamaModels.length > 0 && (
-                <span className="text-xs text-green-400">{ollamaModels.length} model{ollamaModels.length !== 1 ? "s" : ""} available</span>
+                <span className="text-xs text-emerald-400">{ollamaModels.length} model{ollamaModels.length !== 1 ? "s" : ""} available</span>
               )}
               {ollamaTest === "error" && <span className="text-xs text-red-400">{ollamaError}</span>}
             </div>
@@ -363,22 +357,23 @@ export default function SettingsPage() {
 
         {/* ── Recording ── */}
         <section className="space-y-4">
-          <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Recording</h2>
-          <div className="bg-gray-900 rounded-xl p-5 border border-gray-800 space-y-3">
+          <h2 className="text-xs font-semibold text-[#6b6f8e] uppercase tracking-wider">Recording</h2>
+          <div className="bg-[#181929] rounded-xl p-5 border border-[#252640] space-y-3">
             <div>
-              <label className="text-sm text-gray-400 block mb-2">Audio format</label>
-              <select value={settings.audioFormat} onChange={(e) => set("audioFormat", e.target.value)}
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white">
+              <label className="text-sm text-[#8b8fa8] block mb-2">Audio format</label>
+              <select value={settings.audioFormat} onChange={(e) => set("audioFormat", e.target.value)} className={selectCls}>
                 {AUDIO_FORMATS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
               </select>
             </div>
             <label className="flex items-center justify-between cursor-pointer">
               <div>
                 <p className="text-sm font-medium">Low memory mode</p>
-                <p className="text-xs text-gray-500">Downsample audio to 16kHz mono before transcription</p>
+                <p className="text-xs text-[#6b6f8e]">Downsample audio to 16kHz mono before transcription</p>
               </div>
-              <button onClick={() => set("lowMemoryMode", !settings.lowMemoryMode)}
-                className={`relative w-11 h-6 rounded-full transition ${settings.lowMemoryMode ? "bg-blue-600" : "bg-gray-700"}`}>
+              <button
+                onClick={() => set("lowMemoryMode", !settings.lowMemoryMode)}
+                className={`relative w-11 h-6 rounded-full transition ${settings.lowMemoryMode ? "bg-violet-600" : "bg-[#252640]"}`}
+              >
                 <span className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform ${settings.lowMemoryMode ? "translate-x-5" : ""}`} />
               </button>
             </label>
@@ -387,49 +382,59 @@ export default function SettingsPage() {
 
         {/* ── Branding & Export ── */}
         <section className="space-y-4">
-          <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Branding & Export</h2>
-          <div className="bg-gray-900 rounded-xl p-5 border border-gray-800 space-y-4">
+          <h2 className="text-xs font-semibold text-[#6b6f8e] uppercase tracking-wider">Branding & Export</h2>
+          <div className="bg-[#181929] rounded-xl p-5 border border-[#252640] space-y-4">
             <div>
-              <label className="text-sm text-gray-400 block mb-2">Logo (for PDF/Word exports)</label>
+              <label className="text-sm text-[#8b8fa8] block mb-2">Logo (for PDF/Word exports)</label>
               <div className="flex items-center gap-3">
                 {settings.logoDataUrl ? (
                   // eslint-disable-next-line @next/next/no-img-element
-                  <img src={settings.logoDataUrl} alt="Logo preview" className="h-12 w-auto rounded border border-gray-700 bg-gray-800 p-1 object-contain" />
+                  <img src={settings.logoDataUrl} alt="Logo preview" className="h-12 w-auto rounded border border-[#252640] bg-[#252640] p-1 object-contain" />
                 ) : (
-                  <div className="h-12 w-20 rounded border border-dashed border-gray-700 flex items-center justify-center text-xs text-gray-600">No logo</div>
+                  <div className="h-12 w-20 rounded border border-dashed border-[#252640] flex items-center justify-center text-xs text-[#4a4d6a]">No logo</div>
                 )}
                 <div className="flex gap-2">
-                  <button onClick={() => logoInputRef.current?.click()}
-                    className="text-xs px-3 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 border border-gray-700 transition">
+                  <button
+                    onClick={() => logoInputRef.current?.click()}
+                    className="text-xs px-3 py-1.5 rounded-lg bg-[#252640] hover:bg-[#2f3158] border border-[#2f3158] transition text-[#c5c7e8]"
+                  >
                     {settings.logoDataUrl ? "Change" : "Upload"}
                   </button>
                   {settings.logoDataUrl && (
-                    <button onClick={() => set("logoDataUrl", "")}
-                      className="text-xs px-3 py-1.5 rounded-lg border border-gray-700 text-gray-400 hover:border-red-700 hover:text-red-400 transition">
+                    <button
+                      onClick={() => set("logoDataUrl", "")}
+                      className="text-xs px-3 py-1.5 rounded-lg border border-[#252640] text-[#8b8fa8] hover:border-red-700 hover:text-red-400 transition"
+                    >
                       Remove
                     </button>
                   )}
                 </div>
                 <input ref={logoInputRef} type="file" accept="image/*" className="hidden" onChange={handleLogoUpload} />
               </div>
-              <p className="text-xs text-gray-600 mt-1">Max 200 KB · PNG or SVG recommended</p>
+              <p className="text-xs text-[#4a4d6a] mt-1">Max 200 KB · PNG or SVG recommended</p>
             </div>
             <div>
-              <label className="text-sm text-gray-400 block mb-1">Default email recipients</label>
-              <input value={settings.emailRecipients} onChange={(e) => set("emailRecipients", e.target.value)}
+              <label className="text-sm text-[#8b8fa8] block mb-1">Default email recipients</label>
+              <input
+                value={settings.emailRecipients}
+                onChange={(e) => set("emailRecipients", e.target.value)}
                 placeholder="team@example.com, manager@example.com"
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500" />
-              <p className="text-xs text-gray-500 mt-1">Pre-filled in email export</p>
+                className={inputCls}
+              />
+              <p className="text-xs text-[#6b6f8e] mt-1">Pre-filled in email export</p>
             </div>
           </div>
         </section>
 
         {/* Save */}
-        <button onClick={handleSave} disabled={saving}
-          className="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 font-semibold transition">
+        <button
+          onClick={handleSave}
+          disabled={saving}
+          className="w-full py-3 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 disabled:opacity-50 font-semibold transition shadow-lg shadow-violet-900/30"
+        >
           {saving ? "Saving…" : "Save Settings"}
         </button>
-      </main>
+      </div>
     </div>
   );
 }

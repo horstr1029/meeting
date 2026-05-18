@@ -37,7 +37,6 @@ export default function RecordPage() {
     });
   }, []);
 
-  // Load mic devices and user audio format preference
   useEffect(() => {
     loadMicDevices();
     fetch("/api/settings").then((r) => r.json()).then((s) => {
@@ -45,7 +44,6 @@ export default function RecordPage() {
     });
   }, [loadMicDevices]);
 
-  // Create object URL for recorded blob
   const recordedAudioUrl =
     recorder.audioBlob && recorder.state === "done"
       ? (audioBlobUrlRef.current ??
@@ -73,7 +71,6 @@ export default function RecordPage() {
     setTranscribeError(null);
 
     try {
-      // Create meeting record first
       const meetingRes = await fetch("/api/meetings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -82,7 +79,6 @@ export default function RecordPage() {
       if (!meetingRes.ok) throw new Error("Failed to create meeting");
       const meeting = await meetingRes.json();
 
-      // Downsample audio for efficiency
       let blobToSend = activeBlob;
       try {
         blobToSend = await downsampleAudio(activeBlob, 16000);
@@ -107,7 +103,6 @@ export default function RecordPage() {
       const data = await transcribeRes.json();
       const transcript: string = data.text ?? data.transcript ?? "";
 
-      // Save transcript to meeting
       await fetch(`/api/meetings/${meeting.id}`, {
         method: "PUT",
         headers: { "Content-Type": "application/json" },
@@ -131,25 +126,22 @@ export default function RecordPage() {
   const hasDoneRecording = recorder.state === "done" && recorder.audioBlob;
 
   return (
-    <div className="min-h-screen bg-gray-950 text-white">
-      <header className="flex items-center justify-between px-8 py-4 border-b border-gray-800">
-        <div className="flex items-center gap-3">
-          <button onClick={() => router.push("/dashboard")} className="text-gray-400 hover:text-white transition text-sm">
-            ← Dashboard
-          </button>
-          <h1 className="text-xl font-bold">New Meeting</h1>
+    <div className="p-8">
+      <div className="max-w-2xl mx-auto space-y-6">
+        {/* Page header */}
+        <div>
+          <h1 className="text-2xl font-bold text-white">New Meeting</h1>
+          <p className="text-sm text-[#8b8fa8] mt-1">Record or upload audio for transcription</p>
         </div>
-      </header>
 
-      <main className="max-w-2xl mx-auto px-6 py-8 space-y-6">
         {/* Tabs */}
-        <div className="flex gap-1 bg-gray-900 p-1 rounded-xl w-fit">
+        <div className="flex gap-1 bg-[#181929] p-1 rounded-xl w-fit border border-[#252640]">
           {(["record", "upload"] as Tab[]).map((t) => (
             <button
               key={t}
               onClick={() => setTab(t)}
               className={`px-5 py-2 rounded-lg text-sm font-medium transition ${
-                tab === t ? "bg-blue-600 text-white" : "text-gray-400 hover:text-white"
+                tab === t ? "bg-violet-600 text-white shadow-lg shadow-violet-900/30" : "text-[#8b8fa8] hover:text-white"
               }`}
             >
               {t === "record" ? "Record" : "Upload File"}
@@ -160,8 +152,8 @@ export default function RecordPage() {
         {tab === "record" && (
           <div className="space-y-4">
             {/* Source mode */}
-            <div className="bg-gray-900 rounded-xl p-4 space-y-3">
-              <label className="text-sm text-gray-400 font-medium">Audio Source</label>
+            <div className="bg-[#181929] rounded-xl p-4 space-y-3 border border-[#252640]">
+              <label className="text-sm text-[#8b8fa8] font-medium">Audio Source</label>
               <div className="flex gap-3">
                 {(["mic_only", "mixed"] as SourceMode[]).map((m) => (
                   <button
@@ -170,8 +162,8 @@ export default function RecordPage() {
                     onClick={() => setSourceMode(m)}
                     className={`flex-1 py-2 rounded-lg text-sm font-medium border transition ${
                       sourceMode === m
-                        ? "border-blue-500 bg-blue-950 text-blue-300"
-                        : "border-gray-700 text-gray-400 hover:border-gray-500"
+                        ? "border-violet-500 bg-violet-950/50 text-violet-300"
+                        : "border-[#252640] text-[#8b8fa8] hover:border-[#3a3c6a]"
                     } disabled:opacity-50`}
                   >
                     {m === "mic_only" ? "Mic only" : "Mic + System audio"}
@@ -182,15 +174,15 @@ export default function RecordPage() {
               {/* Mic selector */}
               <div>
                 <div className="flex items-center justify-between mb-1">
-                  <label className="text-xs text-gray-500">Microphone</label>
+                  <label className="text-xs text-[#6b6f8e]">Microphone</label>
                   <button onClick={loadMicDevices} disabled={isActive}
-                    className="text-xs text-gray-500 hover:text-gray-300 transition disabled:opacity-40">
+                    className="text-xs text-[#6b6f8e] hover:text-[#c5c7e8] transition disabled:opacity-40">
                     ↻ Refresh
                   </button>
                 </div>
                 <select value={micDeviceId} onChange={(e) => setMicDeviceId(e.target.value)}
                   disabled={isActive}
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white disabled:opacity-50">
+                  className="w-full bg-[#252640] border border-[#2f3158] rounded-lg px-3 py-2 text-sm text-white disabled:opacity-50">
                   <option value="">Default microphone</option>
                   {micDevices.map((d) => (
                     <option key={d.deviceId} value={d.deviceId}>
@@ -202,10 +194,10 @@ export default function RecordPage() {
 
               {/* Audio format */}
               <div>
-                <label className="text-xs text-gray-500 block mb-1">Audio format</label>
+                <label className="text-xs text-[#6b6f8e] block mb-1">Audio format</label>
                 <select value={audioFormat} onChange={(e) => setAudioFormat(e.target.value)}
                   disabled={isActive}
-                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white disabled:opacity-50">
+                  className="w-full bg-[#252640] border border-[#2f3158] rounded-lg px-3 py-2 text-sm text-white disabled:opacity-50">
                   <option value="audio/webm">WebM (default)</option>
                   <option value="audio/ogg">OGG</option>
                   <option value="audio/mp4">MP4</option>
@@ -215,17 +207,17 @@ export default function RecordPage() {
               {/* Gain sliders */}
               <div className="grid grid-cols-2 gap-3">
                 <div>
-                  <label className="text-xs text-gray-500 block mb-1">Mic volume: {micGain.toFixed(1)}</label>
+                  <label className="text-xs text-[#6b6f8e] block mb-1">Mic volume: {micGain.toFixed(1)}</label>
                   <input type="range" min="0" max="2" step="0.1" value={micGain}
                     onChange={(e) => setMicGain(parseFloat(e.target.value))}
-                    className="w-full accent-blue-500" />
+                    className="w-full accent-violet-500" />
                 </div>
                 {sourceMode === "mixed" && (
                   <div>
-                    <label className="text-xs text-gray-500 block mb-1">System volume: {tabGain.toFixed(1)}</label>
+                    <label className="text-xs text-[#6b6f8e] block mb-1">System volume: {tabGain.toFixed(1)}</label>
                     <input type="range" min="0" max="2" step="0.1" value={tabGain}
                       onChange={(e) => setTabGain(parseFloat(e.target.value))}
-                      className="w-full accent-blue-500" />
+                      className="w-full accent-violet-500" />
                   </div>
                 )}
               </div>
@@ -236,10 +228,10 @@ export default function RecordPage() {
 
             {/* Timer */}
             <div className="text-center">
-              <span className={`text-3xl font-mono font-bold ${isRecording ? "text-red-400" : isPaused ? "text-yellow-400" : "text-gray-600"}`}>
+              <span className={`text-3xl font-mono font-bold ${isRecording ? "text-rose-400" : isPaused ? "text-amber-400" : "text-[#4a4d6a]"}`}>
                 {formatDuration(recorder.duration)}
               </span>
-              <p className="text-xs text-gray-500 mt-1">
+              <p className="text-xs text-[#6b6f8e] mt-1">
                 {isRecording ? "● Recording" : isPaused ? "⏸ Paused" : recorder.state === "done" ? "Recording saved" : "Ready"}
               </p>
             </div>
@@ -249,7 +241,7 @@ export default function RecordPage() {
               {!isActive && recorder.state !== "done" && (
                 <button
                   onClick={handleStartRecording}
-                  className="px-8 py-3 rounded-xl bg-red-600 hover:bg-red-700 font-semibold text-lg transition"
+                  className="px-8 py-3 rounded-xl bg-gradient-to-r from-rose-500 to-orange-500 hover:from-rose-400 hover:to-orange-400 font-semibold text-lg transition shadow-lg shadow-rose-900/30"
                 >
                   Start Recording
                 </button>
@@ -258,13 +250,13 @@ export default function RecordPage() {
                 <>
                   <button
                     onClick={recorder.pause}
-                    className="px-5 py-3 rounded-xl bg-yellow-600 hover:bg-yellow-700 font-medium transition"
+                    className="px-5 py-3 rounded-xl bg-amber-600 hover:bg-amber-500 font-medium transition"
                   >
                     {isPaused ? "Resume" : "Pause"}
                   </button>
                   <button
                     onClick={recorder.stop}
-                    className="px-5 py-3 rounded-xl bg-gray-700 hover:bg-gray-600 font-medium transition"
+                    className="px-5 py-3 rounded-xl bg-[#252640] hover:bg-[#2f3158] font-medium transition"
                   >
                     Stop
                   </button>
@@ -273,22 +265,20 @@ export default function RecordPage() {
               {recorder.state === "done" && (
                 <button
                   onClick={recorder.reset}
-                  className="px-5 py-3 rounded-xl bg-gray-700 hover:bg-gray-600 font-medium transition text-sm"
+                  className="px-5 py-3 rounded-xl bg-[#252640] hover:bg-[#2f3158] font-medium transition text-sm"
                 >
                   Record again
                 </button>
               )}
             </div>
 
-            {/* Error */}
             {recorder.error && (
-              <p className="text-sm text-red-400 bg-red-950 px-3 py-2 rounded-lg">{recorder.error}</p>
+              <p className="text-sm text-red-400 bg-red-950/50 px-3 py-2 rounded-lg border border-red-900/50">{recorder.error}</p>
             )}
 
-            {/* Recorded audio playback */}
             {hasDoneRecording && recordedAudioUrl && (
-              <div className="bg-gray-900 rounded-xl p-4 space-y-2">
-                <p className="text-sm text-gray-400 font-medium">Recorded audio</p>
+              <div className="bg-[#181929] rounded-xl p-4 space-y-2 border border-[#252640]">
+                <p className="text-sm text-[#8b8fa8] font-medium">Recorded audio</p>
                 <audio controls src={recordedAudioUrl} className="w-full" />
               </div>
             )}
@@ -298,7 +288,7 @@ export default function RecordPage() {
         {tab === "upload" && (
           <div className="space-y-4">
             <div
-              className="border-2 border-dashed border-gray-700 rounded-xl p-10 text-center cursor-pointer hover:border-blue-500 transition"
+              className="border-2 border-dashed border-[#252640] rounded-xl p-10 text-center cursor-pointer hover:border-violet-500 transition"
               onClick={() => document.getElementById("audioFileInput")?.click()}
               onDragOver={(e) => e.preventDefault()}
               onDrop={(e) => {
@@ -311,14 +301,14 @@ export default function RecordPage() {
                 }
               }}
             >
-              <p className="text-gray-400">Drop an audio file here or <span className="text-blue-400">browse</span></p>
-              <p className="text-xs text-gray-600 mt-1">MP3, WAV, M4A, OGG, WEBM supported</p>
+              <p className="text-[#8b8fa8]">Drop an audio file here or <span className="text-violet-400">browse</span></p>
+              <p className="text-xs text-[#4a4d6a] mt-1">MP3, WAV, M4A, OGG, WEBM supported</p>
               <input id="audioFileInput" type="file" accept="audio/*" className="hidden" onChange={handleUploadChange} />
             </div>
 
             {uploadFile && uploadAudioUrl && (
-              <div className="bg-gray-900 rounded-xl p-4 space-y-2">
-                <p className="text-sm text-gray-400 font-medium">
+              <div className="bg-[#181929] rounded-xl p-4 space-y-2 border border-[#252640]">
+                <p className="text-sm text-[#8b8fa8] font-medium">
                   {uploadFile.name} — {formatBytes(uploadFile.size)}
                 </p>
                 <audio controls src={uploadAudioUrl} className="w-full" />
@@ -327,13 +317,13 @@ export default function RecordPage() {
           </div>
         )}
 
-        {/* Transcribe button */}
+        {/* Transcribe */}
         {activeBlob && (
           <div className="space-y-3">
             <div className="flex items-center gap-3">
-              <label className="text-xs text-gray-500 shrink-0">Language</label>
+              <label className="text-xs text-[#6b6f8e] shrink-0">Language</label>
               <select value={langOverride} onChange={(e) => setLangOverride(e.target.value)}
-                className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white">
+                className="flex-1 bg-[#181929] border border-[#252640] rounded-lg px-3 py-2 text-sm text-white">
                 <option value="">From settings (default)</option>
                 <option value="en">English</option>
                 <option value="af">Afrikaans</option>
@@ -347,18 +337,18 @@ export default function RecordPage() {
               </select>
             </div>
             {transcribeError && (
-              <p className="text-sm text-red-400 bg-red-950 px-3 py-2 rounded-lg">{transcribeError}</p>
+              <p className="text-sm text-red-400 bg-red-950/50 px-3 py-2 rounded-lg border border-red-900/50">{transcribeError}</p>
             )}
             <button
               onClick={handleTranscribe}
               disabled={isTranscribing}
-              className="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 font-semibold transition"
+              className="w-full py-3 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 disabled:opacity-50 font-semibold transition shadow-lg shadow-violet-900/30"
             >
               {isTranscribing ? "Transcribing…" : "Transcribe"}
             </button>
           </div>
         )}
-      </main>
+      </div>
     </div>
   );
 }
