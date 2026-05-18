@@ -1,7 +1,8 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { useToast } from "@/contexts/ToastContext";
 
 type Provider = "groq" | "assemblyai" | "whisper" | "webspeech";
 type TestState = "idle" | "testing" | "ok" | "error";
@@ -20,11 +21,14 @@ interface Settings {
   ollamaPort: string;
   ollamaModel: string;
   ollamaProto: string;
+  audioFormat: string;
+  emailRecipients: string;
+  logoDataUrl: string;
   theme: string;
   lowMemoryMode: boolean;
 }
 
-const defaultSettings: Settings = {
+const DEFAULT_SETTINGS: Settings = {
   transcriptionProvider: "groq",
   groqApiKey: "",
   assemblyAiApiKey: "",
@@ -32,12 +36,41 @@ const defaultSettings: Settings = {
   whisperModel: "whisper-1", whisperLang: "", whisperProto: "http",
   ollamaHost: "172.17.0.1", ollamaPort: "11211",
   ollamaModel: "mistral:7b-instruct", ollamaProto: "http",
-  theme: "dark", lowMemoryMode: true,
+  audioFormat: "audio/webm",
+  emailRecipients: "",
+  logoDataUrl: "",
+  theme: "dark",
+  lowMemoryMode: true,
 };
 
-function TestButton({
-  state, onClick, label,
-}: { state: TestState; onClick: () => void; label?: string }) {
+const WHISPER_MODELS = ["whisper-1", "tiny", "base", "small", "medium", "large", "large-v2", "large-v3"];
+const WHISPER_PATHS = [
+  { label: "/v1/audio/transcriptions  (OpenAI-compatible)", value: "/v1/audio/transcriptions" },
+  { label: "/asr  (whisper-asr-webservice)", value: "/asr" },
+  { label: "/transcribe", value: "/transcribe" },
+  { label: "/inference", value: "/inference" },
+  { label: "/api/transcribe", value: "/api/transcribe" },
+  { label: "/predict", value: "/predict" },
+];
+const AUDIO_FORMATS = [
+  { label: "WebM (default, best quality)", value: "audio/webm" },
+  { label: "OGG", value: "audio/ogg" },
+  { label: "MP4", value: "audio/mp4" },
+];
+const LANGUAGES = [
+  { label: "Auto-detect", value: "" },
+  { label: "English", value: "en" },
+  { label: "Afrikaans", value: "af" },
+  { label: "French", value: "fr" },
+  { label: "German", value: "de" },
+  { label: "Spanish", value: "es" },
+  { label: "Portuguese", value: "pt" },
+  { label: "Dutch", value: "nl" },
+  { label: "Zulu", value: "zu" },
+  { label: "Xhosa", value: "xh" },
+];
+
+function TestButton({ state, onClick, label }: { state: TestState; onClick: () => void; label?: string }) {
   const base = "px-3 py-1.5 rounded-lg text-xs font-medium border transition";
   if (state === "testing") return <button disabled className={`${base} border-gray-600 text-gray-500`}>Testing…</button>;
   if (state === "ok") return <button disabled className={`${base} border-green-700 bg-green-950 text-green-400`}>✓ Connected</button>;
@@ -47,10 +80,10 @@ function TestButton({
 
 export default function SettingsPage() {
   const router = useRouter();
-  const [settings, setSettings] = useState<Settings>(defaultSettings);
+  const { toast } = useToast();
+  const [settings, setSettings] = useState<Settings>(DEFAULT_SETTINGS);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
-  const [saved, setSaved] = useState(false);
   const [groqTest, setGroqTest] = useState<TestState>("idle");
   const [groqError, setGroqError] = useState("");
   const [assemblyTest, setAssemblyTest] = useState<TestState>("idle");
@@ -58,11 +91,16 @@ export default function SettingsPage() {
   const [ollamaTest, setOllamaTest] = useState<TestState>("idle");
   const [ollamaError, setOllamaError] = useState("");
   const [ollamaModels, setOllamaModels] = useState<string[]>([]);
+  const [confirmReset, setConfirmReset] = useState(false);
+  const logoInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     fetch("/api/settings")
       .then((r) => r.json())
-      .then((data) => { setSettings((s) => ({ ...s, ...data })); setLoading(false); });
+      .then((data) => {
+        setSettings((s) => ({ ...s, ...data, logoDataUrl: data.logoDataUrl ?? "" }));
+        setLoading(false);
+      });
   }, []);
 
   const set = (key: keyof Settings, value: string | boolean) =>
@@ -70,110 +108,105 @@ export default function SettingsPage() {
 
   const handleSave = async () => {
     setSaving(true);
-    await fetch("/api/settings", {
+    const res = await fetch("/api/settings", {
       method: "PUT",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(settings),
     });
     setSaving(false);
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
+    if (res.ok) toast("Settings saved", "success");
+    else toast("Failed to save settings", "error");
   };
 
-  const testAssemblyAI = async () => {
-    setAssemblyTest("testing");
-    setAssemblyError("");
-    const res = await fetch("/api/test-connection", {
-      method: "POST",
+  const handleReset = async () => {
+    if (!confirmReset) { setConfirmReset(true); setTimeout(() => setConfirmReset(false), 4000); return; }
+    setSettings(DEFAULT_SETTINGS);
+    setConfirmReset(false);
+    await fetch("/api/settings", {
+      method: "PUT",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ type: "assemblyai", assemblyAiApiKey: settings.assemblyAiApiKey }),
+      body: JSON.stringify(DEFAULT_SETTINGS),
     });
-    const data = await res.json() as { ok: boolean; error?: string };
-    if (data.ok) {
-      setAssemblyTest("ok");
-    } else {
-      setAssemblyTest("error");
-      setAssemblyError(data.error ?? "Unknown error");
-    }
+    toast("Settings reset to defaults", "info");
+  };
+
+  const handleLogoUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    if (file.size > 200 * 1024) { toast("Logo too large — max 200 KB", "error"); return; }
+    const reader = new FileReader();
+    reader.onload = () => set("logoDataUrl", reader.result as string);
+    reader.readAsDataURL(file);
   };
 
   const testGroq = async () => {
-    setGroqTest("testing");
-    setGroqError("");
+    setGroqTest("testing"); setGroqError("");
     const res = await fetch("/api/test-connection", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
+      method: "POST", headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ type: "groq", groqApiKey: settings.groqApiKey }),
     });
     const data = await res.json() as { ok: boolean; error?: string };
-    if (data.ok) {
-      setGroqTest("ok");
-    } else {
-      setGroqTest("error");
-      setGroqError(data.error ?? "Unknown error");
-    }
+    setGroqTest(data.ok ? "ok" : "error");
+    if (!data.ok) setGroqError(data.error ?? "Unknown error");
+  };
+
+  const testAssemblyAI = async () => {
+    setAssemblyTest("testing"); setAssemblyError("");
+    const res = await fetch("/api/test-connection", {
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "assemblyai", assemblyAiApiKey: settings.assemblyAiApiKey }),
+    });
+    const data = await res.json() as { ok: boolean; error?: string };
+    setAssemblyTest(data.ok ? "ok" : "error");
+    if (!data.ok) setAssemblyError(data.error ?? "Unknown error");
   };
 
   const testOllama = async () => {
-    setOllamaTest("testing");
-    setOllamaError("");
-    setOllamaModels([]);
+    setOllamaTest("testing"); setOllamaError(""); setOllamaModels([]);
     const res = await fetch("/api/test-connection", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        type: "ollama",
-        ollamaProto: settings.ollamaProto,
-        ollamaHost: settings.ollamaHost,
-        ollamaPort: settings.ollamaPort,
-      }),
+      method: "POST", headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ type: "ollama", ollamaProto: settings.ollamaProto, ollamaHost: settings.ollamaHost, ollamaPort: settings.ollamaPort }),
     });
     const data = await res.json() as { ok: boolean; models?: string[]; error?: string };
     if (data.ok) {
       setOllamaTest("ok");
       setOllamaModels(data.models ?? []);
-      if (data.models && data.models.length > 0 && !data.models.includes(settings.ollamaModel)) {
-        set("ollamaModel", data.models[0]);
-      }
+      if (data.models?.length && !data.models.includes(settings.ollamaModel)) set("ollamaModel", data.models[0]);
     } else {
       setOllamaTest("error");
       setOllamaError(data.error ?? "Unknown error");
     }
   };
 
-  if (loading) {
-    return <div className="min-h-screen bg-gray-950 flex items-center justify-center text-gray-400">Loading…</div>;
-  }
+  if (loading) return <div className="min-h-screen bg-gray-950 flex items-center justify-center text-gray-400">Loading…</div>;
 
   return (
     <div className="min-h-screen bg-gray-950 text-white">
-      <header className="flex items-center gap-3 px-8 py-4 border-b border-gray-800">
-        <button onClick={() => router.push("/dashboard")} className="text-gray-400 hover:text-white text-sm transition">
-          ← Dashboard
+      <header className="flex items-center justify-between px-8 py-4 border-b border-gray-800">
+        <div className="flex items-center gap-3">
+          <button onClick={() => router.push("/dashboard")} className="text-gray-400 hover:text-white text-sm transition">← Dashboard</button>
+          <h1 className="text-xl font-bold">Settings</h1>
+        </div>
+        <button onClick={handleReset}
+          className={`text-xs px-3 py-1.5 rounded-lg border transition ${
+            confirmReset ? "border-red-600 text-red-400 bg-red-950" : "border-gray-700 text-gray-500 hover:border-gray-500 hover:text-gray-300"
+          }`}>
+          {confirmReset ? "Click again to confirm reset" : "Reset to defaults"}
         </button>
-        <h1 className="text-xl font-bold">Settings</h1>
       </header>
 
       <main className="max-w-2xl mx-auto px-8 py-8 space-y-8">
-        {/* Transcription */}
+
+        {/* ── Transcription ── */}
         <section className="space-y-4">
-          <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider">Transcription</h2>
+          <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Transcription</h2>
           <div className="bg-gray-900 rounded-xl p-5 border border-gray-800 space-y-4">
             <div>
               <label className="text-sm text-gray-400 block mb-2">Provider</label>
               <div className="grid grid-cols-2 gap-2">
-                {([
-                  ["groq", "Groq (fast)"],
-                  ["assemblyai", "AssemblyAI (diarize)"],
-                  ["whisper", "Self-hosted"],
-                  ["webspeech", "Web Speech"],
-                ] as [Provider, string][]).map(([p, label]) => (
+                {([["groq","Groq (fast)"],["assemblyai","AssemblyAI (diarize)"],["whisper","Self-hosted"],["webspeech","Web Speech"]] as [Provider,string][]).map(([p, label]) => (
                   <button key={p} onClick={() => set("transcriptionProvider", p)}
-                    className={`py-2 rounded-lg text-sm border transition ${
-                      settings.transcriptionProvider === p
-                        ? "border-blue-500 bg-blue-950 text-blue-300"
-                        : "border-gray-700 text-gray-400 hover:border-gray-500"
-                    }`}>
+                    className={`py-2 rounded-lg text-sm border transition ${settings.transcriptionProvider === p ? "border-blue-500 bg-blue-950 text-blue-300" : "border-gray-700 text-gray-400 hover:border-gray-500"}`}>
                     {label}
                   </button>
                 ))}
@@ -187,29 +220,18 @@ export default function SettingsPage() {
                   <div className="flex gap-2">
                     <input type="password" value={settings.groqApiKey}
                       onChange={(e) => { set("groqApiKey", e.target.value); setGroqTest("idle"); }}
-                      placeholder="gsk_..."
+                      placeholder="gsk_…"
                       className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500" />
                     <TestButton state={groqTest} onClick={testGroq} label="Test" />
                   </div>
-                  {groqTest === "error" && (
-                    <p className="text-xs text-red-400">{groqError}</p>
-                  )}
+                  {groqTest === "error" && <p className="text-xs text-red-400">{groqError}</p>}
                   <p className="text-xs text-gray-500">Get a free key at console.groq.com</p>
                 </div>
                 <div>
-                  <label className="text-xs text-gray-500 block mb-1">Language (leave blank for auto-detect)</label>
+                  <label className="text-xs text-gray-500 block mb-1">Language</label>
                   <select value={settings.whisperLang} onChange={(e) => set("whisperLang", e.target.value)}
-                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500">
-                    <option value="">Auto-detect</option>
-                    <option value="en">English</option>
-                    <option value="af">Afrikaans</option>
-                    <option value="fr">French</option>
-                    <option value="de">German</option>
-                    <option value="es">Spanish</option>
-                    <option value="pt">Portuguese</option>
-                    <option value="nl">Dutch</option>
-                    <option value="zu">Zulu</option>
-                    <option value="xh">Xhosa</option>
+                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white">
+                    {LANGUAGES.map((l) => <option key={l.value} value={l.value}>{l.label}</option>)}
                   </select>
                 </div>
               </div>
@@ -226,25 +248,14 @@ export default function SettingsPage() {
                       className="flex-1 bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500" />
                     <TestButton state={assemblyTest} onClick={testAssemblyAI} label="Test" />
                   </div>
-                  {assemblyTest === "error" && (
-                    <p className="text-xs text-red-400">{assemblyError}</p>
-                  )}
+                  {assemblyTest === "error" && <p className="text-xs text-red-400">{assemblyError}</p>}
                   <p className="text-xs text-gray-500">Free tier: 100 hours/month · app.assemblyai.com</p>
                 </div>
                 <div>
-                  <label className="text-xs text-gray-500 block mb-1">Language (leave blank for auto-detect)</label>
+                  <label className="text-xs text-gray-500 block mb-1">Language</label>
                   <select value={settings.whisperLang} onChange={(e) => set("whisperLang", e.target.value)}
-                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500">
-                    <option value="">Auto-detect</option>
-                    <option value="en">English</option>
-                    <option value="af">Afrikaans</option>
-                    <option value="fr">French</option>
-                    <option value="de">German</option>
-                    <option value="es">Spanish</option>
-                    <option value="pt">Portuguese</option>
-                    <option value="nl">Dutch</option>
-                    <option value="zu">Zulu</option>
-                    <option value="xh">Xhosa</option>
+                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white">
+                    {LANGUAGES.map((l) => <option key={l.value} value={l.value}>{l.label}</option>)}
                   </select>
                 </div>
               </div>
@@ -253,18 +264,37 @@ export default function SettingsPage() {
             {settings.transcriptionProvider === "whisper" && (
               <div className="space-y-3">
                 <div className="grid grid-cols-2 gap-3">
-                  {[
-                    ["Host", "whisperHost"], ["Port", "whisperPort"],
-                    ["Path", "whisperPath"], ["Model", "whisperModel"],
-                    ["Language", "whisperLang"],
-                  ].map(([label, key]) => (
-                    <div key={key}>
-                      <label className="text-xs text-gray-500 block mb-1">{label}</label>
-                      <input value={(settings as unknown as Record<string, string>)[key]}
-                        onChange={(e) => set(key as keyof Settings, e.target.value)}
-                        className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500" />
-                    </div>
-                  ))}
+                  <div>
+                    <label className="text-xs text-gray-500 block mb-1">Host</label>
+                    <input value={settings.whisperHost} onChange={(e) => set("whisperHost", e.target.value)}
+                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500" />
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-500 block mb-1">Port</label>
+                    <input value={settings.whisperPort} onChange={(e) => set("whisperPort", e.target.value)}
+                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500" />
+                  </div>
+                  <div className="col-span-2">
+                    <label className="text-xs text-gray-500 block mb-1">Endpoint path</label>
+                    <select value={settings.whisperPath} onChange={(e) => set("whisperPath", e.target.value)}
+                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white">
+                      {WHISPER_PATHS.map((p) => <option key={p.value} value={p.value}>{p.label}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-500 block mb-1">Model</label>
+                    <select value={settings.whisperModel} onChange={(e) => set("whisperModel", e.target.value)}
+                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white">
+                      {WHISPER_MODELS.map((m) => <option key={m} value={m}>{m}</option>)}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="text-xs text-gray-500 block mb-1">Language</label>
+                    <select value={settings.whisperLang} onChange={(e) => set("whisperLang", e.target.value)}
+                      className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white">
+                      {LANGUAGES.map((l) => <option key={l.value} value={l.value}>{l.label}</option>)}
+                    </select>
+                  </div>
                   <div>
                     <label className="text-xs text-gray-500 block mb-1">Protocol</label>
                     <select value={settings.whisperProto} onChange={(e) => set("whisperProto", e.target.value)}
@@ -285,27 +315,24 @@ export default function SettingsPage() {
           </div>
         </section>
 
-        {/* Ollama */}
+        {/* ── Ollama ── */}
         <section className="space-y-4">
-          <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider">Ollama (Minutes Generation)</h2>
+          <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Ollama (Minutes Generation)</h2>
           <div className="bg-gray-900 rounded-xl p-5 border border-gray-800 space-y-4">
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="text-xs text-gray-500 block mb-1">Host</label>
-                <input value={settings.ollamaHost}
-                  onChange={(e) => { set("ollamaHost", e.target.value); setOllamaTest("idle"); }}
+                <input value={settings.ollamaHost} onChange={(e) => { set("ollamaHost", e.target.value); setOllamaTest("idle"); }}
                   className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500" />
               </div>
               <div>
                 <label className="text-xs text-gray-500 block mb-1">Port</label>
-                <input value={settings.ollamaPort}
-                  onChange={(e) => { set("ollamaPort", e.target.value); setOllamaTest("idle"); }}
+                <input value={settings.ollamaPort} onChange={(e) => { set("ollamaPort", e.target.value); setOllamaTest("idle"); }}
                   className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500" />
               </div>
               <div>
                 <label className="text-xs text-gray-500 block mb-1">Protocol</label>
-                <select value={settings.ollamaProto}
-                  onChange={(e) => { set("ollamaProto", e.target.value); setOllamaTest("idle"); }}
+                <select value={settings.ollamaProto} onChange={(e) => { set("ollamaProto", e.target.value); setOllamaTest("idle"); }}
                   className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white">
                   <option value="http">HTTP</option>
                   <option value="https">HTTPS</option>
@@ -316,34 +343,35 @@ export default function SettingsPage() {
                 {ollamaModels.length > 0 ? (
                   <select value={settings.ollamaModel} onChange={(e) => set("ollamaModel", e.target.value)}
                     className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white">
-                    {ollamaModels.map((m) => (
-                      <option key={m} value={m}>{m}</option>
-                    ))}
+                    {ollamaModels.map((m) => <option key={m} value={m}>{m}</option>)}
                   </select>
                 ) : (
-                  <input value={settings.ollamaModel}
-                    onChange={(e) => set("ollamaModel", e.target.value)}
+                  <input value={settings.ollamaModel} onChange={(e) => set("ollamaModel", e.target.value)}
                     className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500" />
                 )}
               </div>
             </div>
-
-            <div className="flex items-center gap-3 pt-1">
+            <div className="flex items-center gap-3">
               <TestButton state={ollamaTest} onClick={testOllama} label="Test Connection" />
               {ollamaTest === "ok" && ollamaModels.length > 0 && (
                 <span className="text-xs text-green-400">{ollamaModels.length} model{ollamaModels.length !== 1 ? "s" : ""} available</span>
               )}
-              {ollamaTest === "error" && (
-                <span className="text-xs text-red-400">{ollamaError}</span>
-              )}
+              {ollamaTest === "error" && <span className="text-xs text-red-400">{ollamaError}</span>}
             </div>
           </div>
         </section>
 
-        {/* General */}
+        {/* ── Recording ── */}
         <section className="space-y-4">
-          <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wider">General</h2>
+          <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Recording</h2>
           <div className="bg-gray-900 rounded-xl p-5 border border-gray-800 space-y-3">
+            <div>
+              <label className="text-sm text-gray-400 block mb-2">Audio format</label>
+              <select value={settings.audioFormat} onChange={(e) => set("audioFormat", e.target.value)}
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white">
+                {AUDIO_FORMATS.map((f) => <option key={f.value} value={f.value}>{f.label}</option>)}
+              </select>
+            </div>
             <label className="flex items-center justify-between cursor-pointer">
               <div>
                 <p className="text-sm font-medium">Low memory mode</p>
@@ -357,10 +385,49 @@ export default function SettingsPage() {
           </div>
         </section>
 
+        {/* ── Branding & Export ── */}
+        <section className="space-y-4">
+          <h2 className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Branding & Export</h2>
+          <div className="bg-gray-900 rounded-xl p-5 border border-gray-800 space-y-4">
+            <div>
+              <label className="text-sm text-gray-400 block mb-2">Logo (for PDF/Word exports)</label>
+              <div className="flex items-center gap-3">
+                {settings.logoDataUrl ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img src={settings.logoDataUrl} alt="Logo preview" className="h-12 w-auto rounded border border-gray-700 bg-gray-800 p-1 object-contain" />
+                ) : (
+                  <div className="h-12 w-20 rounded border border-dashed border-gray-700 flex items-center justify-center text-xs text-gray-600">No logo</div>
+                )}
+                <div className="flex gap-2">
+                  <button onClick={() => logoInputRef.current?.click()}
+                    className="text-xs px-3 py-1.5 rounded-lg bg-gray-800 hover:bg-gray-700 border border-gray-700 transition">
+                    {settings.logoDataUrl ? "Change" : "Upload"}
+                  </button>
+                  {settings.logoDataUrl && (
+                    <button onClick={() => set("logoDataUrl", "")}
+                      className="text-xs px-3 py-1.5 rounded-lg border border-gray-700 text-gray-400 hover:border-red-700 hover:text-red-400 transition">
+                      Remove
+                    </button>
+                  )}
+                </div>
+                <input ref={logoInputRef} type="file" accept="image/*" className="hidden" onChange={handleLogoUpload} />
+              </div>
+              <p className="text-xs text-gray-600 mt-1">Max 200 KB · PNG or SVG recommended</p>
+            </div>
+            <div>
+              <label className="text-sm text-gray-400 block mb-1">Default email recipients</label>
+              <input value={settings.emailRecipients} onChange={(e) => set("emailRecipients", e.target.value)}
+                placeholder="team@example.com, manager@example.com"
+                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white focus:outline-none focus:border-blue-500" />
+              <p className="text-xs text-gray-500 mt-1">Pre-filled in email export</p>
+            </div>
+          </div>
+        </section>
+
         {/* Save */}
         <button onClick={handleSave} disabled={saving}
           className="w-full py-3 rounded-xl bg-blue-600 hover:bg-blue-700 disabled:opacity-50 font-semibold transition">
-          {saving ? "Saving…" : saved ? "Saved ✓" : "Save Settings"}
+          {saving ? "Saving…" : "Save Settings"}
         </button>
       </main>
     </div>

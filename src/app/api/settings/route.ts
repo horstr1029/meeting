@@ -2,7 +2,7 @@ import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
 import { NextRequest, NextResponse } from "next/server";
 
-const VALID_PROVIDERS = ["groq", "whisper", "webspeech"];
+const VALID_PROVIDERS = ["groq", "assemblyai", "whisper", "webspeech"];
 
 export async function GET() {
   const session = await auth();

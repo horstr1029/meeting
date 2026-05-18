@@ -74,6 +74,11 @@ export default function ExportPage() {
         setMeeting(data);
         setLanguage((data.language === "afrikaans" ? "afrikaans" : "english") as Language);
       });
+    fetch("/api/settings")
+      .then((r) => r.json())
+      .then((s: { emailRecipients?: string }) => {
+        if (s.emailRecipients) setEmailTo(s.emailRecipients);
+      });
   }, [id]);
 
   if (!meeting) {

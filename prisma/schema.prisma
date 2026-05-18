@@ -66,6 +66,8 @@ model UserSettings {
   ollamaModel             String  @default("mistral:7b-instruct")
   ollamaProto             String  @default("http")
   audioFormat             String  @default("audio/webm")
+  emailRecipients         String  @default("")
+  logoDataUrl             String? @db.Text
   theme                   String  @default("dark")
   useProxy                Boolean @default(true)
   lowMemoryMode           Boolean @default(true)

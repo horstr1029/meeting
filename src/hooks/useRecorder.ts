@@ -10,7 +10,7 @@ export interface RecorderResult {
   duration: number;
   audioBlob: Blob | null;
   analyserNode: AnalyserNode | null;
-  start: (mode: SourceMode, micDeviceId?: string, micGain?: number, tabGain?: number) => Promise<void>;
+  start: (mode: SourceMode, micDeviceId?: string, micGain?: number, tabGain?: number, preferredMimeType?: string) => Promise<void>;
   pause: () => void;
   stop: () => void;
   reset: () => void;
@@ -51,7 +51,7 @@ export function useRecorder(): RecorderResult {
   };
 
   const start = useCallback(
-    async (mode: SourceMode, micDeviceId?: string, micGain = 1.0, tabGain = 1.0) => {
+    async (mode: SourceMode, micDeviceId?: string, micGain = 1.0, tabGain = 1.0, preferredMimeType?: string) => {
       setError(null);
       try {
         const AudioContextClass =
@@ -107,7 +107,10 @@ export function useRecorder(): RecorderResult {
         setAnalyserNode(analyser);
 
         // MediaRecorder
-        const mimeType = MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm" : "audio/ogg";
+        const mimeType =
+          preferredMimeType && MediaRecorder.isTypeSupported(preferredMimeType) ? preferredMimeType
+          : MediaRecorder.isTypeSupported("audio/webm") ? "audio/webm"
+          : "audio/ogg";
         chunksRef.current = [];
         const mr = new MediaRecorder(dest.stream, { mimeType, audioBitsPerSecond: 128000 });
 

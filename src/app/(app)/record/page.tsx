@@ -1,16 +1,18 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useRecorder, SourceMode } from "@/hooks/useRecorder";
 import { WaveformVisualizer } from "@/components/WaveformVisualizer";
 import { downsampleAudio, formatDuration, formatBytes } from "@/lib/audio";
+import { useToast } from "@/contexts/ToastContext";
 
 type Tab = "record" | "upload";
 
 export default function RecordPage() {
   const router = useRouter();
   const recorder = useRecorder();
+  const { toast } = useToast();
 
   const [tab, setTab] = useState<Tab>("record");
   const [sourceMode, setSourceMode] = useState<SourceMode>("mic_only");
@@ -18,6 +20,7 @@ export default function RecordPage() {
   const [micDeviceId, setMicDeviceId] = useState("");
   const [micGain, setMicGain] = useState(1.0);
   const [tabGain, setTabGain] = useState(1.0);
+  const [audioFormat, setAudioFormat] = useState("audio/webm");
 
   const [uploadFile, setUploadFile] = useState<File | null>(null);
   const [uploadAudioUrl, setUploadAudioUrl] = useState<string | null>(null);
@@ -28,12 +31,19 @@ export default function RecordPage() {
 
   const audioBlobUrlRef = useRef<string | null>(null);
 
-  // Load mic devices
-  useEffect(() => {
+  const loadMicDevices = useCallback(() => {
     navigator.mediaDevices.enumerateDevices().then((devices) => {
       setMicDevices(devices.filter((d) => d.kind === "audioinput"));
     });
   }, []);
+
+  // Load mic devices and user audio format preference
+  useEffect(() => {
+    loadMicDevices();
+    fetch("/api/settings").then((r) => r.json()).then((s) => {
+      if (s.audioFormat) setAudioFormat(s.audioFormat);
+    });
+  }, [loadMicDevices]);
 
   // Create object URL for recorded blob
   const recordedAudioUrl =
@@ -44,7 +54,7 @@ export default function RecordPage() {
 
   const handleStartRecording = () => {
     audioBlobUrlRef.current = null;
-    recorder.start(sourceMode, micDeviceId || undefined, micGain, tabGain);
+    recorder.start(sourceMode, micDeviceId || undefined, micGain, tabGain, audioFormat);
   };
 
   const handleUploadChange = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -104,9 +114,12 @@ export default function RecordPage() {
         body: JSON.stringify({ transcript }),
       });
 
+      toast("Transcription complete!", "success");
       router.push(`/meetings/${meeting.id}`);
     } catch (e) {
-      setTranscribeError(e instanceof Error ? e.message : "Unknown error");
+      const msg = e instanceof Error ? e.message : "Unknown error";
+      setTranscribeError(msg);
+      toast(msg, "error");
     } finally {
       setIsTranscribing(false);
     }
@@ -167,24 +180,37 @@ export default function RecordPage() {
               </div>
 
               {/* Mic selector */}
-              {micDevices.length > 1 && (
-                <div>
-                  <label className="text-xs text-gray-500 block mb-1">Microphone</label>
-                  <select
-                    value={micDeviceId}
-                    onChange={(e) => setMicDeviceId(e.target.value)}
-                    disabled={isActive}
-                    className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white disabled:opacity-50"
-                  >
-                    <option value="">Default microphone</option>
-                    {micDevices.map((d) => (
-                      <option key={d.deviceId} value={d.deviceId}>
-                        {d.label || `Mic ${d.deviceId.slice(0, 8)}`}
-                      </option>
-                    ))}
-                  </select>
+              <div>
+                <div className="flex items-center justify-between mb-1">
+                  <label className="text-xs text-gray-500">Microphone</label>
+                  <button onClick={loadMicDevices} disabled={isActive}
+                    className="text-xs text-gray-500 hover:text-gray-300 transition disabled:opacity-40">
+                    ↻ Refresh
+                  </button>
                 </div>
-              )}
+                <select value={micDeviceId} onChange={(e) => setMicDeviceId(e.target.value)}
+                  disabled={isActive}
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white disabled:opacity-50">
+                  <option value="">Default microphone</option>
+                  {micDevices.map((d) => (
+                    <option key={d.deviceId} value={d.deviceId}>
+                      {d.label || `Mic ${d.deviceId.slice(0, 8)}`}
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Audio format */}
+              <div>
+                <label className="text-xs text-gray-500 block mb-1">Audio format</label>
+                <select value={audioFormat} onChange={(e) => setAudioFormat(e.target.value)}
+                  disabled={isActive}
+                  className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white disabled:opacity-50">
+                  <option value="audio/webm">WebM (default)</option>
+                  <option value="audio/ogg">OGG</option>
+                  <option value="audio/mp4">MP4</option>
+                </select>
+              </div>
 
               {/* Gain sliders */}
               <div className="grid grid-cols-2 gap-3">
