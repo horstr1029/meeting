@@ -41,6 +41,84 @@ const priorityStyles: Record<Priority, string> = {
 
 const inputCls = "w-full bg-[#252640] border border-[#2f3158] rounded-lg px-3 py-1.5 text-sm text-white focus:outline-none focus:border-violet-500";
 
+const SPEAKER_COLORS = [
+  { bg: "bg-violet-950/40", text: "text-violet-300", border: "border-violet-800/40", label: "bg-violet-800/60 text-violet-200" },
+  { bg: "bg-cyan-950/40",   text: "text-cyan-300",   border: "border-cyan-800/40",   label: "bg-cyan-800/60 text-cyan-200" },
+  { bg: "bg-amber-950/40",  text: "text-amber-300",  border: "border-amber-800/40",  label: "bg-amber-800/60 text-amber-200" },
+  { bg: "bg-emerald-950/40",text: "text-emerald-300",border: "border-emerald-800/40",label: "bg-emerald-800/60 text-emerald-200" },
+  { bg: "bg-rose-950/40",   text: "text-rose-300",   border: "border-rose-800/40",   label: "bg-rose-800/60 text-rose-200" },
+];
+
+const SPEAKER_RE = /^(\[?(?:Speaker\s*[A-Z0-9_-]+|SPEAKER_\d+)\]?)\s*:/im;
+
+function parseSpeakerBlocks(text: string): { speaker: string | null; lines: string }[] {
+  const rawLines = text.split("\n");
+  const blocks: { speaker: string | null; lines: string }[] = [];
+  let current: { speaker: string | null; lines: string[] } = { speaker: null, lines: [] };
+
+  for (const line of rawLines) {
+    const m = line.match(SPEAKER_RE);
+    if (m) {
+      if (current.lines.length > 0 || current.speaker) {
+        blocks.push({ speaker: current.speaker, lines: current.lines.join("\n") });
+      }
+      current = { speaker: m[1].replace(/[\[\]]/g, "").trim(), lines: [line.replace(m[0], "").trim()] };
+    } else {
+      current.lines.push(line);
+    }
+  }
+  if (current.lines.length > 0 || current.speaker) {
+    blocks.push({ speaker: current.speaker, lines: current.lines.join("\n") });
+  }
+  return blocks;
+}
+
+function SpeakerTranscript({ text }: { text: string }) {
+  const blocks = parseSpeakerBlocks(text);
+  const hasSpeakers = blocks.some((b) => b.speaker !== null);
+  if (!hasSpeakers) {
+    return <span>{text}</span>;
+  }
+
+  const speakerMap = new Map<string, number>();
+  blocks.forEach((b) => {
+    if (b.speaker && !speakerMap.has(b.speaker)) {
+      speakerMap.set(b.speaker, speakerMap.size);
+    }
+  });
+
+  return (
+    <div className="space-y-3">
+      {/* Legend */}
+      <div className="flex gap-2 flex-wrap pb-2 border-b border-[#1e1f35]">
+        {Array.from(speakerMap.entries()).map(([sp, idx]) => {
+          const c = SPEAKER_COLORS[idx % SPEAKER_COLORS.length];
+          return (
+            <span key={sp} className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${c.label}`}>
+              {sp}
+            </span>
+          );
+        })}
+      </div>
+      {blocks.map((block, i) => {
+        if (block.speaker === null) {
+          return block.lines.trim() ? (
+            <p key={i} className="text-[#8b8fa8] text-sm whitespace-pre-wrap">{block.lines}</p>
+          ) : null;
+        }
+        const idx = speakerMap.get(block.speaker) ?? 0;
+        const c = SPEAKER_COLORS[idx % SPEAKER_COLORS.length];
+        return (
+          <div key={i} className={`rounded-lg px-3 py-2 border ${c.bg} ${c.border}`}>
+            <span className={`text-[10px] font-bold uppercase tracking-wide ${c.text} block mb-1`}>{block.speaker}</span>
+            <p className={`text-sm whitespace-pre-wrap ${c.text}`}>{block.lines}</p>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 export default function MeetingPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
@@ -475,8 +553,10 @@ Only output TASK lines. No other text.`;
                 </button>
               </div>
             ) : (
-              <div className="bg-[#181929] rounded-xl p-5 text-sm text-[#c5c7e8] leading-relaxed whitespace-pre-wrap min-h-48 border border-[#252640]">
-                {meeting.transcript || <span className="text-[#4a4d6a] italic">{af ? "Geen transkripsie nog nie." : "No transcript yet."}</span>}
+              <div className="bg-[#181929] rounded-xl p-5 text-sm text-[#c5c7e8] leading-relaxed min-h-48 border border-[#252640]">
+                {meeting.transcript
+                  ? <SpeakerTranscript text={meeting.transcript} />
+                  : <span className="text-[#4a4d6a] italic">{af ? "Geen transkripsie nog nie." : "No transcript yet."}</span>}
               </div>
             )}
 

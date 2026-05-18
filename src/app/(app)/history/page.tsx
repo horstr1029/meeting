@@ -23,6 +23,8 @@ export default function HistoryPage() {
   const [tagFilter, setTagFilter] = useState("");
   const [loading, setLoading] = useState(true);
   const [deleting, setDeleting] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [bulkDeleting, setBulkDeleting] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   const fetchMeetings = useCallback((q: string, tag: string) => {
@@ -54,7 +56,33 @@ export default function HistoryPage() {
     setDeleting(id);
     await fetch(`/api/meetings/${id}`, { method: "DELETE" });
     setMeetings((prev) => prev.filter((m) => m.id !== id));
+    setSelected((prev) => { const s = new Set(prev); s.delete(id); return s; });
     setDeleting(null);
+  };
+
+  const toggleSelect = (id: string) => {
+    setSelected((prev) => {
+      const s = new Set(prev);
+      if (s.has(id)) s.delete(id); else s.add(id);
+      return s;
+    });
+  };
+
+  const toggleSelectAll = () => {
+    if (selected.size === meetings.length) {
+      setSelected(new Set());
+    } else {
+      setSelected(new Set(meetings.map((m) => m.id)));
+    }
+  };
+
+  const bulkDelete = async () => {
+    if (!confirm(`Delete ${selected.size} meeting${selected.size !== 1 ? "s" : ""}? This cannot be undone.`)) return;
+    setBulkDeleting(true);
+    await Promise.all(Array.from(selected).map((id) => fetch(`/api/meetings/${id}`, { method: "DELETE" })));
+    setMeetings((prev) => prev.filter((m) => !selected.has(m.id)));
+    setSelected(new Set());
+    setBulkDeleting(false);
   };
 
   // Collect all unique tags across meetings for filter chips
@@ -137,7 +165,14 @@ export default function HistoryPage() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="text-left text-[#6b6f8e] border-b border-[#252640]">
-                  <th className="pb-3 pt-4 px-5 font-medium">Title</th>
+                  <th className="pb-3 pt-4 px-4 w-8">
+                    <input type="checkbox"
+                      checked={meetings.length > 0 && selected.size === meetings.length}
+                      onChange={toggleSelectAll}
+                      className="accent-violet-500 cursor-pointer"
+                    />
+                  </th>
+                  <th className="pb-3 pt-4 px-3 font-medium">Title</th>
                   <th className="pb-3 pt-4 px-3 font-medium">Date</th>
                   <th className="pb-3 pt-4 px-3 font-medium">Tags</th>
                   <th className="pb-3 pt-4 px-3 font-medium">Actions</th>
@@ -148,13 +183,18 @@ export default function HistoryPage() {
               <tbody className="divide-y divide-[#1e1f35]">
                 {meetings.map((m) => {
                   const tagList = m.tags ? m.tags.split(",").map((t) => t.trim()).filter(Boolean) : [];
+                  const isSelected = selected.has(m.id);
                   return (
                     <tr
                       key={m.id}
-                      className="hover:bg-[#111223] transition cursor-pointer"
+                      className={`hover:bg-[#111223] transition cursor-pointer ${isSelected ? "bg-violet-950/20" : ""}`}
                       onClick={() => router.push(`/meetings/${m.id}`)}
                     >
-                      <td className="py-3.5 px-5">
+                      <td className="py-3.5 px-4 w-8" onClick={(e) => { e.stopPropagation(); toggleSelect(m.id); }}>
+                        <input type="checkbox" checked={isSelected} onChange={() => toggleSelect(m.id)}
+                          className="accent-violet-500 cursor-pointer" />
+                      </td>
+                      <td className="py-3.5 px-3">
                         <div>
                           <span className="font-medium text-white hover:text-violet-300 transition">
                             {m.title}
@@ -221,6 +261,23 @@ export default function HistoryPage() {
               </tbody>
             </table>
           </div>
+        </div>
+      )}
+
+      {/* Floating bulk action bar */}
+      {selected.size > 0 && (
+        <div className="fixed bottom-6 left-1/2 -translate-x-1/2 z-50 flex items-center gap-3 px-5 py-3 rounded-2xl bg-[#181929] border border-[#3a3c6a] shadow-xl shadow-black/50">
+          <span className="text-sm text-[#c5c7e8] font-medium">
+            {selected.size} selected
+          </span>
+          <button onClick={() => setSelected(new Set())}
+            className="text-xs text-[#6b6f8e] hover:text-white transition px-2 py-1 rounded-lg hover:bg-[#252640]">
+            Clear
+          </button>
+          <button onClick={bulkDelete} disabled={bulkDeleting}
+            className="text-xs px-4 py-1.5 rounded-lg bg-red-700 hover:bg-red-600 text-white font-medium transition disabled:opacity-50">
+            {bulkDeleting ? "Deleting…" : `Delete ${selected.size}`}
+          </button>
         </div>
       )}
     </div>

@@ -56,6 +56,13 @@ function mdToHtml(md: string): string {
     .replace(/(?<![>])$/, "</p>");
 }
 
+interface ShareLink {
+  id: string;
+  token: string;
+  createdAt: string;
+  expiresAt: string | null;
+}
+
 export default function ExportPage() {
   const { id } = useParams<{ id: string }>();
   const router = useRouter();
@@ -65,6 +72,9 @@ export default function ExportPage() {
   const [emailTo, setEmailTo] = useState("");
   const [copied, setCopied] = useState<string | null>(null);
   const printRef = useRef<HTMLDivElement>(null);
+
+  const [shareLinks, setShareLinks] = useState<ShareLink[]>([]);
+  const [creatingLink, setCreatingLink] = useState(false);
 
   useEffect(() => {
     fetch(`/api/meetings/${id}`)
@@ -78,7 +88,24 @@ export default function ExportPage() {
       .then((s: { emailRecipients?: string }) => {
         if (s.emailRecipients) setEmailTo(s.emailRecipients);
       });
+    fetch(`/api/meetings/${id}/share`)
+      .then((r) => r.json())
+      .then((links: ShareLink[]) => setShareLinks(links));
   }, [id]);
+
+  const createShareLink = async () => {
+    setCreatingLink(true);
+    const res = await fetch(`/api/meetings/${id}/share`, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({}) });
+    const link: ShareLink = await res.json();
+    setShareLinks((prev) => [link, ...prev]);
+    setCreatingLink(false);
+    copyWithFeedback(`${window.location.origin}/share/${link.token}`, `share-${link.token}`);
+  };
+
+  const revokeShareLink = async (token: string) => {
+    await fetch(`/api/meetings/${id}/share?token=${token}`, { method: "DELETE" });
+    setShareLinks((prev) => prev.filter((l) => l.token !== token));
+  };
 
   if (!meeting) {
     return <div className="flex items-center justify-center py-20 text-[#8b8fa8]">Loading…</div>;
@@ -387,6 +414,42 @@ ${mdToHtml(meeting.minutes)}
                 {copied === "wa" ? "Copied ✓" : "Copy"}
               </button>
             </div>
+          </div>
+
+          {/* Share Link */}
+          <div className={`${cardCls} space-y-3`}>
+            <div className="flex items-center justify-between">
+              <div>
+                <p className="font-medium text-white">🔗 Share Link</p>
+                <p className="text-xs text-[#6b6f8e] mt-0.5">Read-only public link — no login required</p>
+              </div>
+              <button onClick={createShareLink} disabled={creatingLink}
+                className={`${btnPrimary} bg-[#252640] hover:bg-[#2f3158] text-[#c5c7e8] disabled:opacity-50`}>
+                {creatingLink ? "Creating…" : "+ New Link"}
+              </button>
+            </div>
+            {shareLinks.length > 0 && (
+              <ul className="space-y-2">
+                {shareLinks.map((link) => {
+                  const url = `${typeof window !== "undefined" ? window.location.origin : ""}/share/${link.token}`;
+                  const isExpired = link.expiresAt ? new Date(link.expiresAt) < new Date() : false;
+                  return (
+                    <li key={link.token} className={`flex items-center gap-2 px-3 py-2 rounded-lg bg-[#111223] border ${isExpired ? "border-red-900/40 opacity-60" : "border-[#252640]"}`}>
+                      <span className="flex-1 text-xs text-[#8b8fa8] truncate font-mono">{url}</span>
+                      {isExpired && <span className="text-[10px] text-red-400 flex-shrink-0">expired</span>}
+                      <button onClick={() => copyWithFeedback(url, `share-${link.token}`)}
+                        className="text-xs px-2 py-1 rounded bg-[#252640] hover:bg-[#2f3158] text-[#c5c7e8] flex-shrink-0">
+                        {copied === `share-${link.token}` ? "Copied ✓" : "Copy"}
+                      </button>
+                      <button onClick={() => revokeShareLink(link.token)}
+                        className="text-xs px-2 py-1 rounded bg-[#252640] hover:bg-red-950 text-[#8b8fa8] hover:text-red-400 flex-shrink-0">
+                        Revoke
+                      </button>
+                    </li>
+                  );
+                })}
+              </ul>
+            )}
           </div>
 
           {/* Preview */}

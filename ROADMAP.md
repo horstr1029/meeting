@@ -113,3 +113,38 @@
 ## Phase 19 — Webhook / n8n Integration
 - Webhook URL in settings
 - POST events: new meeting, transcription done, action items extracted
+
+---
+
+## Phase 20 — PWA (Progressive Web App) ✅
+- `public/manifest.json` with app name, colors, icons
+- Manifest link in root layout metadata
+- Installable on desktop and mobile from browser
+
+## Phase 21 — Shareable Read-only Links ✅
+- `ShareLink` Prisma model (token + expiry)
+- `POST /api/meetings/[id]/share` — create link, optional expiry
+- `GET /api/share/[token]` — fetch public meeting data
+- `src/app/share/[token]/page.tsx` — public read-only view (no auth)
+- Share link card on export page: generate + copy URL + revoke
+
+## Phase 22 — Speaker Diarization UI ✅
+- Transcript view parses `[Speaker A]:` / `[SPEAKER_01]:` / `Speaker 1:` patterns
+- Per-speaker color bands (violet / cyan / amber / emerald / rose, cycling)
+- Speaker legend strip above transcript
+
+## Phase 23 — Bulk Operations ✅
+- Row checkboxes on history page
+- Select-all checkbox in header
+- Floating action bar: delete N selected meetings
+- Bulk delete API calls with confirmation
+
+## Phase 24 — Weekly Digest Email
+- Scheduled SMTP summary: meetings this week + overdue action items
+- Nodemailer via SMTP settings
+- Manual trigger button in settings
+
+## Phase 25 — Theme Toggle
+- Light / dark mode via CSS variables
+- Theme stored in UserSettings.theme
+- Toggle button in sidebar footer

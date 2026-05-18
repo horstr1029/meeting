@@ -16,6 +16,8 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "DAB Meetings",
   description: "AI-powered meeting transcription and minutes",
+  manifest: "/manifest.json",
+  appleWebApp: { capable: true, statusBarStyle: "black-translucent", title: "DAB Meetings" },
 };
 
 export default function RootLayout({
