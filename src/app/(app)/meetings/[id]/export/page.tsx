@@ -10,6 +10,7 @@ interface ActionItem {
   id: string;
   text: string;
   assignee: string | null;
+  priority: string;
   done: boolean;
 }
 
@@ -20,18 +21,41 @@ interface Meeting {
   transcript: string | null;
   minutes: string | null;
   language: string;
+  attendees: string;
+  agenda: string | null;
   actionItems: ActionItem[];
 }
 
-const labels = (lang: Language) => ({
-  date:  lang === "afrikaans" ? "DATUM"        : "DATE",
-  time:  lang === "afrikaans" ? "TYD"          : "TIME",
-  att:   lang === "afrikaans" ? "TEENWOORDIG"  : "ATTENDEES",
-  tasks: lang === "afrikaans" ? "Aksie-items"  : "Action Items",
-  chair: lang === "afrikaans" ? "VOORSITTER HANDTEKENING" : "CHAIRPERSON SIGNATURE",
-  appr:  lang === "afrikaans" ? "DATUM GOEDGEKEUR"        : "DATE APPROVED",
+const L = (lang: Language) => ({
+  date:     lang === "afrikaans" ? "DATUM"        : "DATE",
+  time:     lang === "afrikaans" ? "TYD"          : "TIME",
+  att:      lang === "afrikaans" ? "TEENWOORDIG"  : "ATTENDEES",
+  agenda:   lang === "afrikaans" ? "AGENDA"       : "AGENDA",
+  tasks:    lang === "afrikaans" ? "Aksie-items"  : "Action Items",
+  chair:    lang === "afrikaans" ? "VOORSITTER HANDTEKENING" : "CHAIRPERSON SIGNATURE",
+  appr:     lang === "afrikaans" ? "DATUM GOEDGEKEUR"        : "DATE APPROVED",
   official: lang === "afrikaans" ? "Amptelike Vergaderingnotules" : "Official Meeting Minutes",
+  priority: lang === "afrikaans" ? "Prioriteit"  : "Priority",
+  assignee: lang === "afrikaans" ? "Toegewys"    : "Assignee",
+  status:   lang === "afrikaans" ? "Status"      : "Status",
+  done:     lang === "afrikaans" ? "Klaar"       : "Done",
+  pending:  lang === "afrikaans" ? "Uitstaande"  : "Pending",
 });
+
+// Minimal markdown → HTML for Word/email
+function mdToHtml(md: string): string {
+  return md
+    .replace(/^### (.+)$/gm, "<h3>$1</h3>")
+    .replace(/^## (.+)$/gm, "<h2>$1</h2>")
+    .replace(/^# (.+)$/gm, "<h1>$1</h1>")
+    .replace(/^\* (.+)$/gm, "<li>$1</li>")
+    .replace(/^- (.+)$/gm, "<li>$1</li>")
+    .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
+    .replace(/\*(.+?)\*/g, "<em>$1</em>")
+    .replace(/\n\n/g, "</p><p>")
+    .replace(/^(?!<[hlu])/m, "<p>")
+    .replace(/(?<![>])$/, "</p>");
+}
 
 export default function ExportPage() {
   const { id } = useParams<{ id: string }>();
@@ -40,7 +64,7 @@ export default function ExportPage() {
   const [meeting, setMeeting] = useState<Meeting | null>(null);
   const [language, setLanguage] = useState<Language>("english");
   const [emailTo, setEmailTo] = useState("");
-  const [showPrintPreview, setShowPrintPreview] = useState(false);
+  const [copied, setCopied] = useState<string | null>(null);
   const printRef = useRef<HTMLDivElement>(null);
 
   useEffect(() => {
@@ -56,72 +80,134 @@ export default function ExportPage() {
     return <div className="min-h-screen bg-gray-950 flex items-center justify-center text-gray-400">Loading…</div>;
   }
 
-  const L = labels(language);
-  const dateStr = new Date(meeting.date).toLocaleDateString("en-ZA", {
-    day: "2-digit", month: "long", year: "numeric",
-  });
-  const timeStr = new Date(meeting.date).toLocaleTimeString("en-ZA", {
-    hour: "2-digit", minute: "2-digit",
-  });
+  const lbl = L(language);
+  const dateStr = new Date(meeting.date).toLocaleDateString("en-ZA", { day: "2-digit", month: "long", year: "numeric" });
+  const timeStr = new Date(meeting.date).toLocaleTimeString("en-ZA", { hour: "2-digit", minute: "2-digit" });
+  const attendeeList = meeting.attendees ? meeting.attendees.split(",").map((s) => s.trim()).filter(Boolean) : [];
+  const hasTasks = meeting.actionItems.length > 0;
 
-  const taskLines = meeting.actionItems.length
-    ? meeting.actionItems.map((t) => `[${t.done ? "✓" : " "}] ${t.text}${t.assignee ? ` (${t.assignee})` : ""}`).join("\n")
-    : language === "afrikaans" ? "Geen aksie-items nie." : "No action items recorded.";
+  const copyWithFeedback = (text: string, key: string) => {
+    navigator.clipboard.writeText(text);
+    setCopied(key);
+    setTimeout(() => setCopied(null), 2000);
+  };
 
+  // ── Email body ──────────────────────────────────────────────────────────────
   const emailBody = [
     `${language === "afrikaans" ? "VERGADERINGNOTULE" : "MEETING MINUTES"} — ${meeting.title}`,
-    `${L.date}: ${dateStr}`,
+    `${lbl.date}: ${dateStr}  ${lbl.time}: ${timeStr}`,
+    attendeeList.length ? `${lbl.att}: ${attendeeList.join(", ")}` : "",
+    meeting.agenda ? `${lbl.agenda}: ${meeting.agenda}` : "",
     "",
     meeting.minutes ?? (language === "afrikaans" ? "Geen notule gegenereer nie." : "No minutes generated."),
     "",
-    `${L.tasks}:`,
-    taskLines,
+    `── ${lbl.tasks} ──`,
+    hasTasks
+      ? meeting.actionItems.map((t) => `[${t.done ? "✓" : " "}] ${t.text}${t.assignee ? ` (${t.assignee})` : ""}  [${t.priority}]`).join("\n")
+      : language === "afrikaans" ? "Geen aksie-items nie." : "No action items.",
     "",
-    "---",
     "Generated by DAB Meetings",
-  ].join("\n");
+  ].filter((l) => l !== undefined).join("\n");
 
+  // ── WhatsApp message ────────────────────────────────────────────────────────
+  const waSummary = (meeting.minutes ?? "")
+    .replace(/[#*`_[\]()]/g, "")
+    .split("\n")
+    .filter(Boolean)
+    .slice(0, 8)
+    .join("\n");
+
+  const waTopTasks = meeting.actionItems
+    .filter((t) => !t.done)
+    .slice(0, 8)
+    .map((t) => `• ${t.text}${t.assignee ? ` (${t.assignee})` : ""}`)
+    .join("\n");
+
+  const waMessage = [
+    `📋 *${meeting.title}*`,
+    `${lbl.date}: ${dateStr}`,
+    attendeeList.length ? `${lbl.att}: ${attendeeList.join(", ")}` : "",
+    "",
+    waSummary,
+    waTopTasks ? `\n*${lbl.tasks}:*\n${waTopTasks}` : "",
+    "\n_Generated by DAB Meetings_",
+  ].filter(Boolean).join("\n");
+
+  const waUrl = `https://wa.me/?text=${encodeURIComponent(waMessage)}`;
+
+  // ── CSV export ──────────────────────────────────────────────────────────────
+  const handleCsvExport = () => {
+    if (!hasTasks) return;
+    const header = `Task,Assignee,Priority,Status,Meeting\n`;
+    const rows = meeting.actionItems
+      .map((t) =>
+        [
+          `"${t.text.replace(/"/g, '""')}"`,
+          `"${(t.assignee ?? "").replace(/"/g, '""')}"`,
+          t.priority,
+          t.done ? lbl.done : lbl.pending,
+          `"${meeting.title.replace(/"/g, '""')}"`,
+        ].join(",")
+      )
+      .join("\n");
+    const blob = new Blob([header + rows], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `${meeting.title.replace(/\s+/g, "_")}_tasks.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
+  // ── Word export ─────────────────────────────────────────────────────────────
   const handleWordExport = () => {
     if (!meeting.minutes) return;
-
-    const taskHtml = meeting.actionItems.length
+    const taskRows = hasTasks
       ? meeting.actionItems
-          .map((t) => `<li>[${t.done ? "X" : " "}] ${t.text}${t.assignee ? ` (${t.assignee})` : ""}</li>`)
+          .map(
+            (t) =>
+              `<tr><td>[${t.done ? "X" : " "}]</td><td>${t.text}</td><td>${t.assignee ?? ""}</td><td>${t.priority}</td></tr>`
+          )
           .join("")
-      : "<li>No action items recorded.</li>";
-
-    // Simple markdown → basic HTML (headings + paragraphs)
-    const content = meeting.minutes
-      .replace(/^### (.+)$/gm, "<h3>$1</h3>")
-      .replace(/^## (.+)$/gm, "<h2>$1</h2>")
-      .replace(/^# (.+)$/gm, "<h1>$1</h1>")
-      .replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>")
-      .replace(/\*(.+?)\*/g, "<em>$1</em>")
-      .replace(/\n\n/g, "</p><p>")
-      .replace(/^/, "<p>")
-      .replace(/$/, "</p>");
+      : `<tr><td colspan="4">${language === "afrikaans" ? "Geen aksie-items nie." : "No action items."}</td></tr>`;
 
     const html = `<html xmlns:o='urn:schemas-microsoft-com:office:office' xmlns:w='urn:schemas-microsoft-com:office:word' xmlns='http://www.w3.org/TR/REC-html40'>
 <head><meta charset='utf-8'><title>${meeting.title}</title>
 <style>
-  body{font-family:Calibri,Arial,sans-serif;line-height:1.5;color:#333;}
-  h1{color:#1a1a6e;font-size:24pt;border-bottom:2px solid #1a1a6e;padding-bottom:5px;}
-  h2{color:#2563eb;font-size:16pt;margin-top:20pt;}
-  table{width:100%;border-collapse:collapse;margin-bottom:20pt;}
-  td{padding:8pt;font-size:10pt;border:1px solid #e2e8f0;}
-  .label{font-weight:bold;color:#1a1a6e;width:100pt;}
-  .footer{font-size:9pt;color:#94a3b8;text-align:center;margin-top:40pt;border-top:1px solid #eee;padding-top:10pt;}
+  body{font-family:Calibri,Arial,sans-serif;line-height:1.5;color:#333;margin:40pt;}
+  h1{color:#1a3a8e;font-size:22pt;border-bottom:2px solid #1a3a8e;padding-bottom:5pt;}
+  h2{color:#2563eb;font-size:14pt;margin-top:16pt;}
+  h3{color:#374151;font-size:12pt;}
+  table{width:100%;border-collapse:collapse;margin-bottom:16pt;font-size:10pt;}
+  td,th{padding:6pt 8pt;border:1pt solid #d1d5db;}
+  th{background:#f3f4f6;font-weight:bold;text-align:left;}
+  .meta td:first-child{font-weight:bold;color:#1a3a8e;width:80pt;background:#f8fafc;}
+  .footer{font-size:8pt;color:#94a3b8;text-align:center;margin-top:40pt;border-top:1pt solid #e5e7eb;padding-top:8pt;}
+  .sig table{margin-top:30pt;} .sig td{border:none;padding:0 20pt 0 0;font-size:9pt;}
 </style></head>
 <body>
 <h1>${meeting.title}</h1>
-<p><em>${L.official}</em></p>
-<table>
-  <tr><td class="label">${L.date}</td><td>${dateStr} ${timeStr}</td></tr>
-  <tr><td class="label">${L.tasks}</td><td>${meeting.actionItems.length} items</td></tr>
+<p><em>${lbl.official}</em></p>
+
+<table class="meta">
+  <tr><td>${lbl.date}</td><td>${dateStr}</td><td>${lbl.time}</td><td>${timeStr}</td></tr>
+  ${attendeeList.length ? `<tr><td>${lbl.att}</td><td colspan="3">${attendeeList.join(", ")}</td></tr>` : ""}
+  ${meeting.agenda ? `<tr><td>${lbl.agenda}</td><td colspan="3">${meeting.agenda}</td></tr>` : ""}
 </table>
-<div>${content}</div>
-<h2>${L.tasks}</h2>
-<ul>${taskHtml}</ul>
+
+${mdToHtml(meeting.minutes)}
+
+<h2>${lbl.tasks}</h2>
+<table>
+  <tr><th></th><th>Task</th><th>${lbl.assignee}</th><th>${lbl.priority}</th></tr>
+  ${taskRows}
+</table>
+
+<div class="sig"><table><tr>
+  <td><strong>${lbl.chair}</strong><br><br>_______________________</td>
+  <td><strong>${lbl.appr}</strong><br><br>_______________________</td>
+</tr></table></div>
+
 <div class="footer">Generated by DAB Meetings — ${dateStr}</div>
 </body></html>`;
 
@@ -134,9 +220,9 @@ export default function ExportPage() {
     URL.revokeObjectURL(url);
   };
 
+  // ── Print / PDF ─────────────────────────────────────────────────────────────
   const handlePrint = () => {
-    setShowPrintPreview(true);
-    setTimeout(() => window.print(), 300);
+    setTimeout(() => window.print(), 100);
   };
 
   const handleEmail = () => {
@@ -147,128 +233,176 @@ export default function ExportPage() {
 
   return (
     <>
-      {/* Print preview — only visible when printing */}
-      {showPrintPreview && (
-        <div ref={printRef} className="hidden print:block p-10 font-sans text-black bg-white">
-          <div className="flex justify-between items-start border-b-2 border-gray-900 pb-5 mb-6">
-            <div>
-              <h1 className="text-2xl font-bold text-gray-900">{meeting.title}</h1>
-              <p className="text-blue-700 text-sm font-semibold mt-1">{L.official}</p>
-            </div>
-          </div>
-          <div className="grid grid-cols-2 gap-4 bg-gray-50 border border-gray-200 p-4 rounded mb-6 text-sm">
-            <div><strong>{L.date}:</strong> {dateStr}</div>
-            <div><strong>{L.time}:</strong> {timeStr}</div>
-          </div>
-          <div className="prose prose-sm max-w-none text-gray-800 leading-relaxed mb-8">
-            {meeting.minutes?.split("\n").map((line, i) => <p key={i}>{line}</p>)}
-          </div>
-          {meeting.actionItems.length > 0 && (
-            <>
-              <h2 className="font-bold text-gray-900 mb-3">{L.tasks}</h2>
-              <ul className="text-sm space-y-1">
-                {meeting.actionItems.map((t) => (
-                  <li key={t.id}>[{t.done ? "✓" : " "}] {t.text}{t.assignee && ` — ${t.assignee}`}</li>
-                ))}
-              </ul>
-            </>
-          )}
-          <div className="grid grid-cols-2 gap-12 mt-16 border-t pt-4 text-xs font-bold text-gray-700">
-            <div>{L.chair}</div>
-            <div>{L.appr}</div>
+      {/* ── Print layout (hidden on screen, visible when printing) ── */}
+      <div ref={printRef} className="hidden print:block p-12 font-sans text-black bg-white text-sm">
+        <div className="flex justify-between items-start border-b-2 border-blue-900 pb-5 mb-6">
+          <div>
+            <h1 className="text-2xl font-bold text-blue-900">{meeting.title}</h1>
+            <p className="text-blue-700 text-sm font-semibold mt-1">{lbl.official}</p>
           </div>
         </div>
-      )}
 
-      {/* Normal UI */}
+        <table className="w-full border-collapse text-xs mb-6" style={{ borderCollapse: "collapse" }}>
+          <tbody>
+            <tr>
+              <td className="font-bold text-blue-900 py-1 pr-4 w-24">{lbl.date}</td>
+              <td className="py-1">{dateStr}</td>
+              <td className="font-bold text-blue-900 py-1 pr-4 pl-8">{lbl.time}</td>
+              <td className="py-1">{timeStr}</td>
+            </tr>
+            {attendeeList.length > 0 && (
+              <tr>
+                <td className="font-bold text-blue-900 py-1">{lbl.att}</td>
+                <td colSpan={3} className="py-1">{attendeeList.join(", ")}</td>
+              </tr>
+            )}
+            {meeting.agenda && (
+              <tr>
+                <td className="font-bold text-blue-900 py-1">{lbl.agenda}</td>
+                <td colSpan={3} className="py-1">{meeting.agenda}</td>
+              </tr>
+            )}
+          </tbody>
+        </table>
+
+        <div className="leading-relaxed text-gray-800 mb-8 whitespace-pre-wrap">
+          {meeting.minutes ?? (language === "afrikaans" ? "Geen notule gegenereer nie." : "No minutes generated.")}
+        </div>
+
+        {hasTasks && (
+          <>
+            <h2 className="font-bold text-blue-900 text-base mb-2">{lbl.tasks}</h2>
+            <table className="w-full text-xs border-collapse mb-8" style={{ borderCollapse: "collapse" }}>
+              <thead>
+                <tr className="bg-gray-100">
+                  <th className="border border-gray-300 p-1 text-left w-6"></th>
+                  <th className="border border-gray-300 p-1 text-left">Task</th>
+                  <th className="border border-gray-300 p-1 text-left w-28">{lbl.assignee}</th>
+                  <th className="border border-gray-300 p-1 text-left w-20">{lbl.priority}</th>
+                </tr>
+              </thead>
+              <tbody>
+                {meeting.actionItems.map((t) => (
+                  <tr key={t.id}>
+                    <td className="border border-gray-300 p-1 text-center">{t.done ? "✓" : ""}</td>
+                    <td className="border border-gray-300 p-1">{t.text}</td>
+                    <td className="border border-gray-300 p-1">{t.assignee ?? ""}</td>
+                    <td className="border border-gray-300 p-1 capitalize">{t.priority}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </>
+        )}
+
+        <div className="grid grid-cols-2 gap-16 mt-16 border-t border-gray-300 pt-6 text-xs font-bold text-gray-700">
+          <div>{lbl.chair}<div className="mt-8 border-t border-gray-500 w-48"></div></div>
+          <div>{lbl.appr}<div className="mt-8 border-t border-gray-500 w-48"></div></div>
+        </div>
+
+        <div className="text-center text-gray-400 text-xs mt-10 border-t border-gray-200 pt-4">
+          Generated by DAB Meetings — {dateStr}
+        </div>
+      </div>
+
+      {/* ── Screen UI ── */}
       <div className="min-h-screen bg-gray-950 text-white print:hidden">
         <header className="flex items-center gap-3 px-8 py-4 border-b border-gray-800">
-          <button onClick={() => router.back()} className="text-gray-400 hover:text-white text-sm transition">
-            ←
-          </button>
-          <h1 className="text-xl font-bold">Export — {meeting.title}</h1>
+          <button onClick={() => router.back()} className="text-gray-400 hover:text-white text-sm transition">←</button>
+          <div className="flex-1 min-w-0">
+            <h1 className="text-xl font-bold truncate">Export — {meeting.title}</h1>
+            <p className="text-xs text-gray-500 mt-0.5">{dateStr}{attendeeList.length ? ` · ${attendeeList.join(", ")}` : ""}</p>
+          </div>
+          <select value={language} onChange={(e) => setLanguage(e.target.value as Language)}
+            className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-white">
+            <option value="english">English</option>
+            <option value="afrikaans">Afrikaans</option>
+          </select>
         </header>
 
-        <main className="max-w-2xl mx-auto px-8 py-8 space-y-6">
-          {/* Language */}
-          <div className="flex items-center gap-3">
-            <span className="text-sm text-gray-400">Output language:</span>
-            <select
-              value={language}
-              onChange={(e) => setLanguage(e.target.value as Language)}
-              className="bg-gray-800 border border-gray-700 rounded-lg px-3 py-1.5 text-sm text-white"
-            >
-              <option value="english">English</option>
-              <option value="afrikaans">Afrikaans</option>
-            </select>
+        <main className="max-w-2xl mx-auto px-8 py-8 space-y-3">
+
+          {/* PDF */}
+          <div className="bg-gray-900 rounded-xl p-5 border border-gray-800 flex items-center justify-between gap-4">
+            <div>
+              <p className="font-medium">PDF</p>
+              <p className="text-xs text-gray-500 mt-0.5">Formatted layout with signature lines · Print to PDF via browser</p>
+            </div>
+            <button onClick={handlePrint} disabled={!meeting.minutes}
+              className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-sm font-medium transition shrink-0">
+              Print / Save PDF
+            </button>
           </div>
 
-          {/* Export options */}
-          <div className="space-y-3">
-            {/* PDF */}
-            <div className="bg-gray-900 rounded-xl p-5 border border-gray-800 flex items-center justify-between">
-              <div>
-                <p className="font-medium">PDF</p>
-                <p className="text-xs text-gray-500 mt-0.5">Print to PDF via browser dialog</p>
-              </div>
-              <button
-                onClick={handlePrint}
-                disabled={!meeting.minutes}
-                className="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-700 disabled:opacity-40 text-sm font-medium transition"
-              >
-                Print / Save PDF
+          {/* Word */}
+          <div className="bg-gray-900 rounded-xl p-5 border border-gray-800 flex items-center justify-between gap-4">
+            <div>
+              <p className="font-medium">Word Document</p>
+              <p className="text-xs text-gray-500 mt-0.5">Styled .doc with metadata table, minutes and task list</p>
+            </div>
+            <button onClick={handleWordExport} disabled={!meeting.minutes}
+              className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-sm font-medium transition shrink-0">
+              Download .doc
+            </button>
+          </div>
+
+          {/* CSV */}
+          <div className="bg-gray-900 rounded-xl p-5 border border-gray-800 flex items-center justify-between gap-4">
+            <div>
+              <p className="font-medium">CSV — Task List</p>
+              <p className="text-xs text-gray-500 mt-0.5">
+                {hasTasks ? `${meeting.actionItems.length} tasks with assignee, priority and status` : "No action items yet"}
+              </p>
+            </div>
+            <button onClick={handleCsvExport} disabled={!hasTasks}
+              className="px-4 py-2 rounded-lg bg-emerald-700 hover:bg-emerald-600 disabled:opacity-40 text-sm font-medium transition shrink-0">
+              Download .csv
+            </button>
+          </div>
+
+          {/* Email */}
+          <div className="bg-gray-900 rounded-xl p-5 border border-gray-800 space-y-3">
+            <div>
+              <p className="font-medium">Email</p>
+              <p className="text-xs text-gray-500 mt-0.5">Open in your default email client or copy the body</p>
+            </div>
+            <input type="email" placeholder="Recipient (optional)" value={emailTo}
+              onChange={(e) => setEmailTo(e.target.value)}
+              className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500" />
+            <div className="flex gap-2">
+              <button onClick={handleEmail}
+                className="flex-1 py-2 rounded-lg bg-gray-700 hover:bg-gray-600 text-sm font-medium transition">
+                Open Email Client
+              </button>
+              <button onClick={() => copyWithFeedback(emailBody, "email")}
+                className="px-4 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-sm transition">
+                {copied === "email" ? "Copied ✓" : "Copy Body"}
               </button>
             </div>
+          </div>
 
-            {/* Word */}
-            <div className="bg-gray-900 rounded-xl p-5 border border-gray-800 flex items-center justify-between">
-              <div>
-                <p className="font-medium">Word Document</p>
-                <p className="text-xs text-gray-500 mt-0.5">Download as .doc file</p>
-              </div>
-              <button
-                onClick={handleWordExport}
-                disabled={!meeting.minutes}
-                className="px-4 py-2 rounded-lg bg-indigo-600 hover:bg-indigo-700 disabled:opacity-40 text-sm font-medium transition"
-              >
-                Download .doc
-              </button>
+          {/* WhatsApp */}
+          <div className="bg-gray-900 rounded-xl p-5 border border-gray-800 space-y-3">
+            <div>
+              <p className="font-medium">WhatsApp</p>
+              <p className="text-xs text-gray-500 mt-0.5">Share a summary + action items via WhatsApp Web</p>
             </div>
-
-            {/* Email */}
-            <div className="bg-gray-900 rounded-xl p-5 border border-gray-800 space-y-3">
-              <div>
-                <p className="font-medium">Email</p>
-                <p className="text-xs text-gray-500 mt-0.5">Open in your default email client</p>
-              </div>
-              <input
-                type="email"
-                placeholder="Recipient email (optional)"
-                value={emailTo}
-                onChange={(e) => setEmailTo(e.target.value)}
-                className="w-full bg-gray-800 border border-gray-700 rounded-lg px-3 py-2 text-sm text-white placeholder-gray-500 focus:outline-none focus:border-blue-500"
-              />
-              <div className="flex gap-2">
-                <button
-                  onClick={handleEmail}
-                  className="flex-1 py-2 rounded-lg bg-gray-700 hover:bg-gray-600 text-sm font-medium transition"
-                >
-                  Open Email Client
-                </button>
-                <button
-                  onClick={() => navigator.clipboard.writeText(emailBody)}
-                  className="px-4 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-sm transition"
-                >
-                  Copy Body
-                </button>
-              </div>
+            <div className="flex gap-2">
+              <a href={waUrl} target="_blank" rel="noopener noreferrer"
+                className="flex-1 py-2 rounded-lg bg-green-700 hover:bg-green-600 text-sm font-medium transition text-center">
+                Share on WhatsApp
+              </a>
+              <button onClick={() => copyWithFeedback(waMessage, "wa")}
+                className="px-4 py-2 rounded-lg bg-gray-800 hover:bg-gray-700 text-sm transition">
+                {copied === "wa" ? "Copied ✓" : "Copy"}
+              </button>
             </div>
           </div>
 
           {/* Preview */}
           {meeting.minutes && (
             <details className="bg-gray-900 rounded-xl border border-gray-800">
-              <summary className="px-5 py-3 cursor-pointer text-sm text-gray-400 hover:text-white">
+              <summary className="px-5 py-3 cursor-pointer text-sm text-gray-400 hover:text-white select-none">
                 Preview minutes
               </summary>
               <div className="px-5 pb-5 prose prose-invert prose-sm max-w-none">
