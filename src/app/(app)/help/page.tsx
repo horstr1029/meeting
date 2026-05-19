@@ -390,6 +390,10 @@ export default function HelpPage() {
               a: "Not yet from the UI, but you can edit the transcript directly in the Transcript tab. Replace SPEAKER_00 with the person's name. Minutes generation will pick up the names from the edited transcript.",
             },
             {
+              q: "I use the Microsoft Teams desktop app — will it record other participants?",
+              a: "No. DAB Meetings uses the browser's Web Audio API, which can only capture audio from browser tabs — not from native desktop applications. If you use the Teams desktop app, only your microphone will be recorded; other participants' audio will not be captured and your transcript will only contain what you said. To capture both sides, open Teams in a browser tab (teams.microsoft.com) and use the system audio option in the recorder. Alternatively, a virtual audio cable such as VB-Cable can route Teams desktop audio into a virtual microphone that the browser can see.",
+            },
+            {
               q: "The Chrome extension button doesn't appear on my meeting page.",
               a: "The extension only injects the button on meet.google.com and teams.microsoft.com pages when an active meeting is open. Make sure you're already in the call (not on a pre-join or home screen). If it still doesn't appear, try reloading the page after the extension is installed.",
             },
