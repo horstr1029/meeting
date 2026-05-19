@@ -15,24 +15,36 @@ model User {
   role         String        @default("user")
   createdAt    DateTime      @default(now())
   meetings     Meeting[]
+  series       MeetingSeries[]
   settings     UserSettings?
 }
 
+model MeetingSeries {
+  id        String    @id @default(cuid())
+  userId    String
+  user      User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  name      String
+  createdAt DateTime  @default(now())
+  meetings  Meeting[]
+}
+
 model Meeting {
-  id          String       @id @default(cuid())
+  id          String          @id @default(cuid())
   userId      String
-  user        User         @relation(fields: [userId], references: [id], onDelete: Cascade)
-  title       String       @default("Untitled Meeting")
-  date        DateTime     @default(now())
+  user        User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  seriesId    String?
+  series      MeetingSeries?  @relation(fields: [seriesId], references: [id], onDelete: SetNull)
+  title       String          @default("Untitled Meeting")
+  date        DateTime        @default(now())
   audioPath   String?
-  transcript  String?      @db.Text
-  minutes     String?      @db.Text
-  language    String       @default("en")
-  attendees   String       @default("")
-  agenda      String?      @db.Text
-  tags        String       @default("")
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
+  transcript  String?         @db.Text
+  minutes     String?         @db.Text
+  language    String          @default("en")
+  attendees   String          @default("")
+  agenda      String?         @db.Text
+  tags        String          @default("")
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
   actionItems ActionItem[]
   shareLinks  ShareLink[]
 }
@@ -83,4 +95,12 @@ model UserSettings {
   useProxy                Boolean @default(true)
   lowMemoryMode           Boolean @default(true)
   extensionApiKey         String  @default("")
+  webhookUrl              String  @default("")
+  smtpHost                String  @default("")
+  smtpPort                String  @default("587")
+  smtpUser                String  @default("")
+  smtpPassword            String  @default("")
+  smtpFrom                String  @default("")
+  smtpSecure              Boolean @default(false)
+  calendarUrl             String  @default("")
 }

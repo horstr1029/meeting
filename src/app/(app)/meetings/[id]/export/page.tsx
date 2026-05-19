@@ -71,6 +71,8 @@ export default function ExportPage() {
   const [language, setLanguage] = useState<Language>("english");
   const [emailTo, setEmailTo] = useState("");
   const [copied, setCopied] = useState<string | null>(null);
+  const [sending, setSending] = useState(false);
+  const [sendResult, setSendResult] = useState<{ ok: boolean; msg: string } | null>(null);
   const printRef = useRef<HTMLDivElement>(null);
 
   const [shareLinks, setShareLinks] = useState<ShareLink[]>([]);
@@ -247,6 +249,22 @@ ${mdToHtml(meeting.minutes)}
     window.location.href = `mailto:${emailTo}?subject=${subject}&body=${body}`;
   };
 
+  const handleSendDirect = async () => {
+    if (!emailTo.trim()) { setSendResult({ ok: false, msg: "Enter a recipient first" }); return; }
+    setSending(true);
+    setSendResult(null);
+    const subject = `${language === "afrikaans" ? "Vergaderingnotule" : "Meeting Minutes"} — ${meeting.title}`;
+    const res = await fetch("/api/email/send", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ to: emailTo, subject, text: emailBody }),
+    });
+    const data = await res.json() as { success?: boolean; error?: string };
+    setSendResult(res.ok ? { ok: true, msg: "Email sent!" } : { ok: false, msg: data.error ?? "Send failed" });
+    setSending(false);
+    if (res.ok) setTimeout(() => setSendResult(null), 4000);
+  };
+
   const cardCls = "bg-[#181929] rounded-xl p-5 border border-[#252640]";
   const btnPrimary = "px-4 py-2 rounded-lg text-sm font-medium transition shrink-0 disabled:opacity-40";
 
@@ -386,16 +404,25 @@ ${mdToHtml(meeting.minutes)}
             <input type="email" placeholder="Recipient (optional)" value={emailTo}
               onChange={(e) => setEmailTo(e.target.value)}
               className="w-full bg-[#252640] border border-[#2f3158] rounded-lg px-3 py-2 text-sm text-white placeholder-[#4a4d6a] focus:outline-none focus:border-violet-500" />
-            <div className="flex gap-2">
+            <div className="flex gap-2 flex-wrap">
+              <button onClick={handleSendDirect} disabled={sending}
+                className="flex-1 py-2 rounded-lg bg-violet-600 hover:bg-violet-700 disabled:opacity-50 text-sm font-medium transition text-white min-w-28">
+                {sending ? "Sending…" : "Send directly"}
+              </button>
               <button onClick={handleEmail}
-                className="flex-1 py-2 rounded-lg bg-[#252640] hover:bg-[#2f3158] text-sm font-medium transition text-[#c5c7e8]">
-                Open Email Client
+                className="flex-1 py-2 rounded-lg bg-[#252640] hover:bg-[#2f3158] text-sm font-medium transition text-[#c5c7e8] min-w-28">
+                Open mail client
               </button>
               <button onClick={() => copyWithFeedback(emailBody, "email")}
                 className="px-4 py-2 rounded-lg bg-[#252640] hover:bg-[#2f3158] text-sm transition text-[#c5c7e8]">
-                {copied === "email" ? "Copied ✓" : "Copy Body"}
+                {copied === "email" ? "Copied ✓" : "Copy body"}
               </button>
             </div>
+            {sendResult && (
+              <p className={`text-xs px-3 py-2 rounded-lg border ${sendResult.ok ? "text-emerald-300 bg-emerald-950/40 border-emerald-900/40" : "text-red-400 bg-red-950/50 border-red-900/50"}`}>
+                {sendResult.msg}
+              </p>
+            )}
           </div>
 
           {/* WhatsApp */}

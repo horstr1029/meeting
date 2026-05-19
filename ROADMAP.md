@@ -88,27 +88,41 @@
 - History page debounced API search
 - "Found in transcript" indicator on results
 
-## Phase 14 — Tags & Categories
+## Phase 14 — Tags & Categories ✅
 - `tags` field on meetings (comma-separated pills)
 - Inline tag editor on meeting detail page
 - Tag filter chips on history page
 
-## Phase 15 — Meeting Analytics
-- Charts: meetings per week, action item completion rate
-- Overdue trend over time
+## Phase 15 — Meeting Analytics ✅
+- `/analytics` page — server-rendered, zero chart libraries
+- Summary stats: total meetings, avg/week, completion rate, busiest day
+- Inline SVG donut: action item completion rate
+- CSS bar charts: meetings per week (8 weeks), meetings by day of week, priority breakdown
+- Sidebar nav entry (📊) + Y keyboard shortcut
 
-## Phase 16 — SMTP Email Delivery
-- SMTP config in settings (host, port, user, password)
-- Send minutes email directly from app — no system mail client
+## Phase 16 — SMTP Email Delivery ✅
+- 6 SMTP fields in UserSettings (host, port, user, password, from, secure) + migration
+- SMTP section in settings with show/hide password + "Test connection" button (verifies via nodemailer)
+- `POST /api/email/send` — sends via nodemailer; `PUT` verifies connection only
+- Export page: "Send directly" button replaces mailto for server-side delivery; inline success/error feedback
 
-## Phase 17 — Live Transcription
-- Stream Groq Whisper during recording
-- Progressive transcript shown while recording
+## Phase 17 — Live Transcription ✅
+- `useLiveTranscription` hook: parallel MediaRecorder on same stream, 15s timeslice
+- First chunk (WebM headers) saved and prepended to each window — every blob is a valid standalone file
+- Chunks POST to `/api/transcribe` (Groq/Whisper); text appended progressively
+- Record page: opt-in toggle (Groq/Whisper only), live panel with pulse indicator + chunk count
+- "⚡ Use live transcript" fast-saves accumulated text; "Re-transcribe" still available for full accuracy
+- `useRecorder` updated to expose `stream: MediaStream | null`
 
-## Phase 18 — Recurring Meeting Series
-- Group meetings under a named series
-- Action items carry forward if not completed
-- Running agenda inherited from prior session
+## Phase 18 — Recurring Meeting Series ✅
+- `MeetingSeries` Prisma model + `seriesId` on `Meeting` (migration applied)
+- `GET/POST /api/series`, `GET/DELETE /api/series/[id]`
+- `/series` list page with last-meeting date; `/series/[id]` detail page
+- Carry-forward panel: incomplete action items from all prior meetings in the series
+- "+ New meeting" pre-fills record page with last agenda + carry-forward items via URL params
+- Meeting detail: series dropdown assigns/unassigns; "View series →" link
+- Record page reads `?title`, `?agenda`, `?seriesId` params and passes `seriesId` on meeting creation
+- 🔁 Series nav entry in sidebar
 
 ## Phase 19 — Webhook / n8n Integration
 - Webhook URL in settings
@@ -139,19 +153,67 @@
 - Floating action bar: delete N selected meetings
 - Bulk delete API calls with confirmation
 
-## Phase 24 — Weekly Digest Email
-- Scheduled SMTP summary: meetings this week + overdue action items
-- Nodemailer via SMTP settings
-- Manual trigger button in settings
+## Phase 24 — Weekly Digest Email ✅
+- `POST /api/email/digest` — queries meetings from last 7 days + all overdue action items
+- Formatted plain-text email: meeting list with attendees + pending counts, overdue items with days-late
+- Sends via user's SMTP settings; falls back to `emailRecipients` if no `to` provided
+- "Send digest now" button in Settings SMTP section with meeting/overdue counts in success message
 
 ## Phase 25 — Theme Toggle
 - Light / dark mode via CSS variables
 - Theme stored in UserSettings.theme
 - Toggle button in sidebar footer
 
-## Phase 26 — Google Meet & Microsoft Teams Recording
+## Phase 26 — Google Meet & Microsoft Teams Recording ✅
 - Browser extension or tab-capture approach to record Google Meet / Teams audio
 - Capture system audio + mic mix from active meeting tab
 - Auto-detect meeting URL to pre-fill meeting title
 - One-click "Record this meeting" button when on a Meet/Teams tab
 - Seamless hand-off to existing transcription pipeline on meeting end
+
+---
+
+## Phase 27 — Talk-time Stats ✅
+- Parse diarized transcript to count words + % per speaker
+- Stats bar above transcript (speaker color, word count, % share)
+- Only shown when diarization detected
+
+## Phase 28 — Meeting Templates ✅
+- Pre-built agenda templates: Standup, Retrospective, 1:1, Sales Call, Project Kickoff, Quarterly Review
+- Template picker dropdown on Record page
+- One-click populates title + agenda field
+
+## Phase 29 — Transcript Chapters ✅
+- Heuristic grouping: every ~200 words = one chapter
+- Chapter label derived from first meaningful words (stop-words filtered)
+- Scrollable pill nav above transcript; clicking jumps to chapter anchor
+- Chapter divider headings injected inline; hidden when transcript is short (&lt;2 chapters)
+
+## Phase 30 — AI Follow-up Email Draft ✅
+- "✉ Follow-up email" button in minutes tab (visible once minutes exist)
+- Ollama streams a professional email: subject line, decisions summary, open action items
+- Collapsible panel with Copy and "Open in mail" (mailto:) buttons
+- Subject parsed from draft and pre-filled in mailto link
+
+## Phase 31 — Keyboard Shortcuts ✅
+- Global shortcuts: N=new recording, D=dashboard, H=history, S=settings
+- In-meeting: T=transcript tab, M=minutes tab, A=actions tab, G=generate minutes
+- `?` opens/closes shortcut legend modal; Esc closes it
+- Shortcuts disabled while typing in any input/textarea
+
+## Phase 32 — Slack / Webhook Push ✅
+- `webhookUrl` field in UserSettings (migration applied)
+- Integrations section in settings with URL input + "Send test ping" button
+- `POST /api/meetings/[id]/webhook` — builds Slack Block Kit payload (header, summary, action items) and forwards to webhook URL
+- "⚡ Push to webhook" button in minutes tab; inline success/error feedback auto-clears after 4s
+
+## Phase 33 — Full-text Transcript Search ✅
+- `/api/meetings?q=` searches title, transcript, attendees, minutes in DB
+- History page debounced API search
+- "in transcript" badge shown on results where match was in transcript body
+
+## Phase 34 — Calendar Sync (iCal) ✅
+- `calendarUrl` field in UserSettings (migration applied) — accepts any iCal feed URL
+- `GET /api/calendar/upcoming` — fetches feed server-side, parses VEVENT blocks (handles folding, TZID, date-only + datetime formats), returns next 14 days sorted by start
+- Settings: Calendar section with iCal URL field + instructions for Google / Outlook / Apple
+- Record page: "📅 From Calendar" button fetches events, inline picker shows title + date + attendee count; clicking pre-fills title and agenda (with attendees + description)

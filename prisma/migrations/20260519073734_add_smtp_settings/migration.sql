@@ -1,0 +1,7 @@
+-- AlterTable
+ALTER TABLE "UserSettings" ADD COLUMN     "smtpFrom" TEXT NOT NULL DEFAULT '',
+ADD COLUMN     "smtpHost" TEXT NOT NULL DEFAULT '',
+ADD COLUMN     "smtpPassword" TEXT NOT NULL DEFAULT '',
+ADD COLUMN     "smtpPort" TEXT NOT NULL DEFAULT '587',
+ADD COLUMN     "smtpSecure" BOOLEAN NOT NULL DEFAULT false,
+ADD COLUMN     "smtpUser" TEXT NOT NULL DEFAULT '';

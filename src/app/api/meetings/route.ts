@@ -61,7 +61,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  let body: { title?: string; language?: string };
+  let body: { title?: string; language?: string; agenda?: string; attendees?: string; seriesId?: string };
   try {
     body = await req.json();
   } catch {
@@ -73,6 +73,9 @@ export async function POST(req: NextRequest) {
       userId,
       title: body.title ?? "Untitled Meeting",
       language: body.language ?? "en",
+      ...(body.agenda ? { agenda: body.agenda } : {}),
+      ...(body.attendees ? { attendees: body.attendees } : {}),
+      ...(body.seriesId ? { seriesId: body.seriesId } : {}),
     },
   });
 

@@ -16,6 +16,8 @@ const nav = [
     section: "MEETINGS",
     items: [
       { href: "/history", icon: "📋", label: "History" },
+      { href: "/series", icon: "🔁", label: "Series" },
+      { href: "/analytics", icon: "📊", label: "Analytics" },
     ],
   },
   {
@@ -88,6 +90,7 @@ export function Sidebar({ email }: { email: string }) {
           <span className="text-[15px] w-5 flex-shrink-0 text-center">🚪</span>
           <span>Sign out</span>
         </button>
+        <p className="text-[10px] text-[#2a2b45] px-2.5 pt-1">Press <kbd className="font-mono bg-[#1a1b2e] border border-[#252640] rounded px-1 text-[#3a3d5a]">?</kbd> for shortcuts</p>
       </div>
     </aside>
   );

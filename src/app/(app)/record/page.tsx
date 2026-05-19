@@ -1,16 +1,53 @@
 "use client";
 
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useRouter } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { useRecorder, SourceMode } from "@/hooks/useRecorder";
+import { useLiveTranscription } from "@/hooks/useLiveTranscription";
 import { WaveformVisualizer } from "@/components/WaveformVisualizer";
 import { downsampleAudio, formatDuration, formatBytes } from "@/lib/audio";
 import { useToast } from "@/contexts/ToastContext";
 
 type Tab = "record" | "upload";
 
+interface CalEvent {
+  title: string;
+  start: string;
+  end: string;
+  attendees: string;
+  description: string;
+}
+
+const TEMPLATES = [
+  {
+    name: "Daily Standup",
+    agenda: "1. What did you accomplish yesterday?\n2. What are you working on today?\n3. Any blockers or impediments?",
+  },
+  {
+    name: "Sprint Retrospective",
+    agenda: "1. What went well this sprint?\n2. What didn't go well?\n3. What should we start/stop/continue?\n4. Action items for next sprint",
+  },
+  {
+    name: "1:1 Check-in",
+    agenda: "1. How are you feeling overall?\n2. Progress on current goals\n3. Any blockers or support needed?\n4. Career & growth topics",
+  },
+  {
+    name: "Sales Discovery",
+    agenda: "1. Company background & current situation\n2. Key pain points and challenges\n3. Desired outcomes and success criteria\n4. Timeline and budget\n5. Next steps",
+  },
+  {
+    name: "Project Kickoff",
+    agenda: "1. Project overview & objectives\n2. Roles and responsibilities\n3. Scope and deliverables\n4. Timeline and milestones\n5. Risks and open questions",
+  },
+  {
+    name: "Quarterly Review",
+    agenda: "1. Review of last quarter goals\n2. Key wins and learnings\n3. Metrics and KPIs review\n4. Goals for next quarter\n5. Resource and budget discussion",
+  },
+];
+
 export default function RecordPage() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const recorder = useRecorder();
   const { toast } = useToast();
 
@@ -31,6 +68,22 @@ export default function RecordPage() {
   const [langOverride, setLangOverride] = useState("");
   const [transcriptionProvider, setTranscriptionProvider] = useState("");
 
+  const [meetingTitle, setMeetingTitle] = useState(() => "");
+  const [meetingAgenda, setMeetingAgenda] = useState(() => "");
+  const [showTemplates, setShowTemplates] = useState(false);
+  const [liveEnabled, setLiveEnabled] = useState(false);
+  const [seriesId, setSeriesId] = useState<string | null>(null);
+  const [calEvents, setCalEvents] = useState<CalEvent[] | null>(null);
+  const [calLoading, setCalLoading] = useState(false);
+  const [calError, setCalError] = useState<string | null>(null);
+  const [showCalPicker, setShowCalPicker] = useState(false);
+
+  const { liveTranscript, chunkCount, transcribing: liveTranscribing, reset: resetLive } =
+    useLiveTranscription(
+      recorder.stream,
+      liveEnabled && (recorder.state === "recording" || recorder.state === "paused"),
+    );
+
   const audioBlobUrlRef = useRef<string | null>(null);
 
   const loadMicDevices = useCallback(() => {
@@ -45,7 +98,13 @@ export default function RecordPage() {
       if (s.audioFormat) setAudioFormat(s.audioFormat);
       if (s.transcriptionProvider) setTranscriptionProvider(s.transcriptionProvider);
     });
-  }, [loadMicDevices]);
+    const t = searchParams.get("title");
+    const a = searchParams.get("agenda");
+    const sid = searchParams.get("seriesId");
+    if (t) setMeetingTitle(t);
+    if (a) setMeetingAgenda(a);
+    if (sid) setSeriesId(sid);
+  }, [loadMicDevices, searchParams]);
 
   const recordedAudioUrl =
     recorder.audioBlob && recorder.state === "done"
@@ -55,6 +114,7 @@ export default function RecordPage() {
 
   const handleStartRecording = () => {
     audioBlobUrlRef.current = null;
+    resetLive();
     recorder.start(sourceMode, micDeviceId || undefined, micGain, tabGain, audioFormat);
   };
 
@@ -68,6 +128,65 @@ export default function RecordPage() {
 
   const activeBlob = tab === "record" ? recorder.audioBlob : uploadFile;
 
+  const loadCalEvents = async () => {
+    setCalLoading(true);
+    setCalError(null);
+    setCalEvents(null);
+    setShowCalPicker(true);
+    const res = await fetch("/api/calendar/upcoming");
+    const data = await res.json() as CalEvent[] | { error: string };
+    if (res.ok) {
+      setCalEvents(data as CalEvent[]);
+    } else {
+      setCalError((data as { error: string }).error);
+    }
+    setCalLoading(false);
+  };
+
+  const importCalEvent = (ev: CalEvent) => {
+    setMeetingTitle(ev.title);
+    if (ev.attendees) {
+      // Store attendees in the agenda prefix so they reach the meeting on creation
+      const attendeeLine = `Attendees: ${ev.attendees}`;
+      const body = ev.description ? `${attendeeLine}\n\n${ev.description.slice(0, 400)}` : attendeeLine;
+      setMeetingAgenda(body);
+    } else if (ev.description) {
+      setMeetingAgenda(ev.description.slice(0, 500));
+    }
+    setShowCalPicker(false);
+  };
+
+  const handleUseLiveTranscript = async () => {
+    if (!liveTranscript) return;
+    setIsTranscribing(true);
+    setTranscribeError(null);
+    setTranscribeStatus("Saving live transcript…");
+    try {
+      const meetingRes = await fetch("/api/meetings", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: meetingTitle.trim() || "New Meeting",
+          agenda: meetingAgenda.trim() || undefined,
+        }),
+      });
+      if (!meetingRes.ok) throw new Error("Failed to create meeting");
+      const meeting = await meetingRes.json() as { id: string };
+      await fetch(`/api/meetings/${meeting.id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ transcript: liveTranscript }),
+      });
+      toast("Live transcript saved!", "success");
+      router.push(`/meetings/${meeting.id}`);
+    } catch (e) {
+      setTranscribeError(e instanceof Error ? e.message : "Unknown error");
+    } finally {
+      setIsTranscribing(false);
+      setTranscribeStatus("");
+    }
+  };
+
   const handleTranscribe = async () => {
     if (!activeBlob) return;
     setIsTranscribing(true);
@@ -78,7 +197,11 @@ export default function RecordPage() {
       const meetingRes = await fetch("/api/meetings", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ title: "New Meeting" }),
+        body: JSON.stringify({
+          title: meetingTitle.trim() || "New Meeting",
+          agenda: meetingAgenda.trim() || undefined,
+          ...(seriesId ? { seriesId } : {}),
+        }),
       });
       if (!meetingRes.ok) throw new Error("Failed to create meeting");
       const meeting = await meetingRes.json();
@@ -188,6 +311,93 @@ export default function RecordPage() {
           <p className="text-sm text-[#8b8fa8] mt-1">Record or upload audio for transcription</p>
         </div>
 
+        {/* Meeting metadata + template picker */}
+        <div className="bg-[#181929] rounded-xl p-4 space-y-3 border border-[#252640]">
+          <div className="flex items-center justify-between">
+            <label className="text-sm text-[#8b8fa8] font-medium">Meeting Details</label>
+            <div className="flex gap-2 items-center relative">
+              <button
+                onClick={loadCalEvents}
+                disabled={calLoading}
+                className="text-xs px-3 py-1.5 rounded-lg bg-[#252640] hover:bg-[#2f3158] text-[#c5c7e8] transition disabled:opacity-50"
+              >
+                {calLoading ? "Loading…" : "📅 From Calendar"}
+              </button>
+              <div className="relative">
+              <button
+                onClick={() => setShowTemplates(!showTemplates)}
+                className="text-xs px-3 py-1.5 rounded-lg bg-[#252640] hover:bg-[#2f3158] text-[#c5c7e8] transition flex items-center gap-1.5"
+              >
+                <span>Templates</span>
+                <span className="text-[#6b6f8e]">{showTemplates ? "▲" : "▼"}</span>
+              </button>
+              {showTemplates && (
+                <div className="absolute right-0 top-9 z-50 w-56 bg-[#1a1b2e] border border-[#2f3158] rounded-xl shadow-2xl overflow-hidden">
+                  {TEMPLATES.map((tpl) => (
+                    <button
+                      key={tpl.name}
+                      onClick={() => {
+                        setMeetingTitle(tpl.name);
+                        setMeetingAgenda(tpl.agenda);
+                        setShowTemplates(false);
+                      }}
+                      className="w-full text-left px-4 py-2.5 text-sm text-[#c5c7e8] hover:bg-[#252640] transition border-b border-[#1e1f35] last:border-0"
+                    >
+                      {tpl.name}
+                    </button>
+                  ))}
+                </div>
+              )}
+              </div>
+            </div>
+          </div>
+
+          {/* Calendar event picker */}
+          {showCalPicker && (
+            <div className="bg-[#111223] rounded-xl border border-[#2f3158] overflow-hidden">
+              <div className="flex items-center justify-between px-3 py-2 border-b border-[#1e1f35]">
+                <span className="text-xs font-semibold text-[#8b8fa8] uppercase tracking-wide">Upcoming events (14 days)</span>
+                <button onClick={() => setShowCalPicker(false)} className="text-[#6b6f8e] hover:text-white text-sm leading-none">×</button>
+              </div>
+              {calLoading && <p className="text-xs text-[#6b6f8e] px-3 py-4">Loading…</p>}
+              {calError && <p className="text-xs text-red-400 px-3 py-4">{calError}</p>}
+              {calEvents && calEvents.length === 0 && (
+                <p className="text-xs text-[#4a4d6a] italic px-3 py-4">No upcoming events in the next 14 days.</p>
+              )}
+              {calEvents && calEvents.map((ev, i) => {
+                const d = new Date(ev.start);
+                const dateStr = d.toLocaleDateString("en-GB", { weekday: "short", day: "numeric", month: "short" });
+                const timeStr = d.toLocaleTimeString("en-GB", { hour: "2-digit", minute: "2-digit" });
+                return (
+                  <button key={i} onClick={() => importCalEvent(ev)}
+                    className="w-full text-left px-3 py-2.5 hover:bg-[#181929] transition border-b border-[#1e1f35] last:border-0">
+                    <p className="text-sm text-[#c5c7e8] font-medium">{ev.title}</p>
+                    <p className="text-xs text-[#6b6f8e] mt-0.5">
+                      {dateStr} · {timeStr}
+                      {ev.attendees && <span className="ml-2 text-[#4a4d6a]">{ev.attendees.split(",").length} attendee{ev.attendees.split(",").length !== 1 ? "s" : ""}</span>}
+                    </p>
+                  </button>
+                );
+              })}
+            </div>
+          )}
+
+          <input
+            type="text"
+            value={meetingTitle}
+            onChange={(e) => setMeetingTitle(e.target.value)}
+            placeholder="Meeting title (optional)"
+            className="w-full bg-[#252640] border border-[#2f3158] rounded-lg px-3 py-2 text-sm text-white placeholder-[#4a4d6a] focus:outline-none focus:border-violet-500"
+          />
+          <textarea
+            value={meetingAgenda}
+            onChange={(e) => setMeetingAgenda(e.target.value)}
+            placeholder="Agenda / notes (optional)"
+            rows={3}
+            className="w-full bg-[#252640] border border-[#2f3158] rounded-lg px-3 py-2 text-sm text-white placeholder-[#4a4d6a] focus:outline-none focus:border-violet-500 resize-none"
+          />
+        </div>
+
         {/* Tabs */}
         <div className="flex gap-1 bg-[#181929] p-1 rounded-xl w-fit border border-[#252640]">
           {(["record", "upload"] as Tab[]).map((t) => (
@@ -277,6 +487,16 @@ export default function RecordPage() {
               </div>
             </div>
 
+            {/* Live transcription toggle */}
+            {(transcriptionProvider === "groq" || transcriptionProvider === "whisper") && !isActive && recorder.state !== "done" && (
+              <label className="flex items-center gap-2.5 cursor-pointer w-fit">
+                <input type="checkbox" checked={liveEnabled} onChange={(e) => setLiveEnabled(e.target.checked)}
+                  className="w-4 h-4 accent-violet-600" />
+                <span className="text-sm text-[#8b8fa8]">Live transcript during recording</span>
+                <span className="text-[10px] text-[#4a4d6a] bg-[#181929] border border-[#252640] px-1.5 py-0.5 rounded">~15s delay</span>
+              </label>
+            )}
+
             {/* Waveform */}
             <WaveformVisualizer analyserNode={recorder.analyserNode} active={isActive} />
 
@@ -328,6 +548,27 @@ export default function RecordPage() {
 
             {recorder.error && (
               <p className="text-sm text-red-400 bg-red-950/50 px-3 py-2 rounded-lg border border-red-900/50">{recorder.error}</p>
+            )}
+
+            {/* Live transcript panel */}
+            {liveEnabled && (isActive || liveTranscript) && (
+              <div className="bg-[#181929] rounded-xl border border-violet-900/40 overflow-hidden">
+                <div className="flex items-center justify-between px-4 py-2.5 border-b border-violet-900/30 bg-violet-950/20">
+                  <div className="flex items-center gap-2">
+                    {liveTranscribing && <span className="w-1.5 h-1.5 rounded-full bg-violet-400 animate-pulse" />}
+                    <span className="text-xs font-semibold text-violet-300 uppercase tracking-wide">
+                      Live transcript
+                    </span>
+                    {chunkCount > 0 && (
+                      <span className="text-[10px] text-[#4a4d6a]">· {chunkCount} chunk{chunkCount !== 1 ? "s" : ""}</span>
+                    )}
+                  </div>
+                  {liveTranscribing && <span className="text-[10px] text-violet-400">Transcribing…</span>}
+                </div>
+                <div className="px-4 py-3 text-sm text-[#c5c7e8] leading-relaxed min-h-16 max-h-48 overflow-y-auto">
+                  {liveTranscript || <span className="text-[#4a4d6a] italic">Waiting for first chunk (15s)…</span>}
+                </div>
+              </div>
             )}
 
             {hasDoneRecording && recordedAudioUrl && (
@@ -399,12 +640,21 @@ export default function RecordPage() {
                 <p className="text-sm text-violet-300">{transcribeStatus}</p>
               </div>
             )}
+            {liveTranscript && (
+              <button
+                onClick={handleUseLiveTranscript}
+                disabled={isTranscribing}
+                className="w-full py-2.5 rounded-xl bg-violet-950/60 hover:bg-violet-900/60 border border-violet-800/50 disabled:opacity-50 text-sm font-medium text-violet-300 transition"
+              >
+                ⚡ Use live transcript (instant)
+              </button>
+            )}
             <button
               onClick={handleTranscribe}
               disabled={isTranscribing}
               className="w-full py-3 rounded-xl bg-gradient-to-r from-violet-600 to-indigo-600 hover:from-violet-500 hover:to-indigo-500 disabled:opacity-50 font-semibold transition shadow-lg shadow-violet-900/30"
             >
-              {isTranscribing ? "Transcribing…" : "Transcribe"}
+              {isTranscribing ? "Transcribing…" : liveTranscript ? "Re-transcribe (full accuracy)" : "Transcribe"}
             </button>
           </div>
         )}

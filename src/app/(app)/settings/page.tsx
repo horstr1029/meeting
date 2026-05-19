@@ -26,6 +26,14 @@ interface Settings {
   theme: string;
   lowMemoryMode: boolean;
   extensionApiKey: string;
+  webhookUrl: string;
+  smtpHost: string;
+  smtpPort: string;
+  smtpUser: string;
+  smtpPassword: string;
+  smtpFrom: string;
+  smtpSecure: boolean;
+  calendarUrl: string;
 }
 
 const DEFAULT_SETTINGS: Settings = {
@@ -42,6 +50,14 @@ const DEFAULT_SETTINGS: Settings = {
   theme: "dark",
   lowMemoryMode: true,
   extensionApiKey: "",
+  webhookUrl: "",
+  smtpHost: "",
+  smtpPort: "587",
+  smtpUser: "",
+  smtpPassword: "",
+  smtpFrom: "",
+  smtpSecure: false,
+  calendarUrl: "",
 };
 
 const WHISPER_MODELS = ["whisper-1", "tiny", "base", "small", "medium", "large", "large-v2", "large-v3"];
@@ -93,6 +109,13 @@ export default function SettingsPage() {
   const [assemblyError, setAssemblyError] = useState("");
   const [ollamaTest, setOllamaTest] = useState<TestState>("idle");
   const [ollamaError, setOllamaError] = useState("");
+  const [webhookTest, setWebhookTest] = useState<TestState>("idle");
+  const [webhookError, setWebhookError] = useState("");
+  const [smtpTest, setSmtpTest] = useState<TestState>("idle");
+  const [smtpError, setSmtpError] = useState("");
+  const [showSmtpPassword, setShowSmtpPassword] = useState(false);
+  const [digestState, setDigestState] = useState<"idle" | "sending" | "ok" | "error">("idle");
+  const [digestMsg, setDigestMsg] = useState("");
   const [ollamaModels, setOllamaModels] = useState<string[]>([]);
   const [confirmReset, setConfirmReset] = useState(false);
   const [showApiKey, setShowApiKey] = useState(false);
@@ -179,6 +202,59 @@ export default function SettingsPage() {
     } else {
       setOllamaTest("error");
       setOllamaError(data.error ?? "Unknown error");
+    }
+  };
+
+  const testWebhook = async () => {
+    const url = settings.webhookUrl.trim();
+    if (!url) { setWebhookTest("error"); setWebhookError("Enter a webhook URL first"); return; }
+    setWebhookTest("testing"); setWebhookError("");
+    try {
+      const res = await fetch(url, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: "DAB Meetings webhook test — connection OK ✓" }),
+      });
+      if (res.ok) { setWebhookTest("ok"); }
+      else { setWebhookTest("error"); setWebhookError(`Server returned ${res.status}`); }
+    } catch (e) {
+      setWebhookTest("error");
+      setWebhookError(e instanceof Error ? e.message : "Request failed");
+    }
+  };
+
+  const testSmtp = async () => {
+    if (!settings.smtpHost) { setSmtpTest("error"); setSmtpError("Enter an SMTP host first"); return; }
+    setSmtpTest("testing"); setSmtpError("");
+    const res = await fetch("/api/email/send", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        smtpHost: settings.smtpHost, smtpPort: settings.smtpPort,
+        smtpUser: settings.smtpUser, smtpPassword: settings.smtpPassword,
+        smtpSecure: settings.smtpSecure,
+      }),
+    });
+    const data = await res.json() as { ok: boolean; error?: string };
+    setSmtpTest(data.ok ? "ok" : "error");
+    if (!data.ok) setSmtpError(data.error ?? "Connection failed");
+  };
+
+  const sendDigest = async () => {
+    setDigestState("sending"); setDigestMsg("");
+    const res = await fetch("/api/email/digest", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({}),
+    });
+    const data = await res.json() as { success?: boolean; error?: string; meetings?: number; overdue?: number };
+    if (res.ok) {
+      setDigestState("ok");
+      setDigestMsg(`Sent! ${data.meetings} meeting${data.meetings !== 1 ? "s" : ""}, ${data.overdue} overdue item${data.overdue !== 1 ? "s" : ""}.`);
+      setTimeout(() => setDigestState("idle"), 6000);
+    } else {
+      setDigestState("error");
+      setDigestMsg(data.error ?? "Send failed");
     }
   };
 
@@ -472,6 +548,119 @@ export default function SettingsPage() {
                   Copy to clipboard
                 </button>
               )}
+            </div>
+          </div>
+        </section>
+
+        {/* ── Integrations ── */}
+        <section className="space-y-4">
+          <h2 className="text-xs font-semibold text-[#6b6f8e] uppercase tracking-wider">Integrations</h2>
+          <div className="bg-[#181929] rounded-xl p-5 border border-[#252640] space-y-4">
+            <div>
+              <label className="text-sm text-[#8b8fa8] block mb-1">Webhook URL (Slack / Teams / custom)</label>
+              <input
+                value={settings.webhookUrl}
+                onChange={(e) => { set("webhookUrl", e.target.value); setWebhookTest("idle"); }}
+                placeholder="https://hooks.slack.com/services/…"
+                className={inputCls}
+              />
+              <p className="text-xs text-[#6b6f8e] mt-1">
+                Paste an incoming webhook URL. Meeting summaries and action items will be posted here.
+              </p>
+            </div>
+            <div className="flex items-center gap-3">
+              <TestButton state={webhookTest} onClick={testWebhook} label="Send test ping" />
+              {webhookTest === "error" && <span className="text-xs text-red-400">{webhookError}</span>}
+            </div>
+          </div>
+        </section>
+
+        {/* ── SMTP Email ── */}
+        <section className="space-y-4">
+          <h2 className="text-xs font-semibold text-[#6b6f8e] uppercase tracking-wider">SMTP Email</h2>
+          <div className="bg-[#181929] rounded-xl p-5 border border-[#252640] space-y-4">
+            <p className="text-xs text-[#6b6f8e]">Send meeting minutes directly from the app without opening your mail client.</p>
+            <div className="grid grid-cols-2 gap-3">
+              <div className="col-span-2 sm:col-span-1">
+                <label className="text-sm text-[#8b8fa8] block mb-1">SMTP Host</label>
+                <input value={settings.smtpHost} onChange={(e) => { set("smtpHost", e.target.value); setSmtpTest("idle"); }}
+                  placeholder="smtp.gmail.com" className={inputCls} />
+              </div>
+              <div>
+                <label className="text-sm text-[#8b8fa8] block mb-1">Port</label>
+                <input value={settings.smtpPort} onChange={(e) => set("smtpPort", e.target.value)}
+                  placeholder="587" className={inputCls} />
+              </div>
+              <div>
+                <label className="text-sm text-[#8b8fa8] block mb-1">Username</label>
+                <input value={settings.smtpUser} onChange={(e) => set("smtpUser", e.target.value)}
+                  placeholder="you@example.com" className={inputCls} />
+              </div>
+              <div>
+                <label className="text-sm text-[#8b8fa8] block mb-1">Password / App password</label>
+                <div className="relative">
+                  <input type={showSmtpPassword ? "text" : "password"}
+                    value={settings.smtpPassword} onChange={(e) => set("smtpPassword", e.target.value)}
+                    placeholder="••••••••" className={`${inputCls} pr-14`} />
+                  <button type="button" onClick={() => setShowSmtpPassword((v) => !v)}
+                    className="absolute right-2 top-1/2 -translate-y-1/2 text-xs text-[#6b6f8e] hover:text-white transition">
+                    {showSmtpPassword ? "Hide" : "Show"}
+                  </button>
+                </div>
+              </div>
+              <div className="col-span-2 sm:col-span-1">
+                <label className="text-sm text-[#8b8fa8] block mb-1">From address</label>
+                <input value={settings.smtpFrom} onChange={(e) => set("smtpFrom", e.target.value)}
+                  placeholder="DAB Meetings <you@example.com>" className={inputCls} />
+              </div>
+            </div>
+            <label className="flex items-center gap-2 cursor-pointer w-fit">
+              <input type="checkbox" checked={settings.smtpSecure}
+                onChange={(e) => set("smtpSecure", e.target.checked)}
+                className="w-4 h-4 accent-violet-600" />
+              <span className="text-sm text-[#8b8fa8]">Use TLS (port 465)</span>
+            </label>
+            <div className="flex items-center gap-3">
+              <TestButton state={smtpTest} onClick={testSmtp} label="Test connection" />
+              {smtpTest === "error" && <span className="text-xs text-red-400">{smtpError}</span>}
+            </div>
+
+            <div className="border-t border-[#252640] pt-4 space-y-3">
+              <div>
+                <p className="text-sm text-white font-medium">Weekly Digest</p>
+                <p className="text-xs text-[#6b6f8e] mt-0.5">
+                  Sends a summary of meetings this week and all overdue action items to the default recipients.
+                </p>
+              </div>
+              <div className="flex items-center gap-3">
+                <button onClick={sendDigest} disabled={digestState === "sending"}
+                  className="px-4 py-2 rounded-lg bg-[#252640] hover:bg-[#2f3158] disabled:opacity-50 text-sm font-medium text-[#c5c7e8] transition">
+                  {digestState === "sending" ? "Sending…" : "Send digest now"}
+                </button>
+                {digestState === "ok" && <span className="text-xs text-emerald-400">{digestMsg}</span>}
+                {digestState === "error" && <span className="text-xs text-red-400">{digestMsg}</span>}
+              </div>
+            </div>
+          </div>
+        </section>
+
+        {/* ── Calendar ── */}
+        <section className="space-y-4">
+          <h2 className="text-xs font-semibold text-[#6b6f8e] uppercase tracking-wider">Calendar</h2>
+          <div className="bg-[#181929] rounded-xl p-5 border border-[#252640] space-y-4">
+            <div>
+              <label className="text-sm text-[#8b8fa8] block mb-1">iCal feed URL</label>
+              <input
+                value={settings.calendarUrl}
+                onChange={(e) => set("calendarUrl", e.target.value)}
+                placeholder="https://calendar.google.com/calendar/ical/…/basic.ics"
+                className={inputCls}
+              />
+              <p className="text-xs text-[#6b6f8e] mt-1.5 space-y-0.5">
+                Works with Google Calendar, Outlook, Apple Calendar — any iCal (.ics) feed URL.
+                <br />
+                <span className="text-[#3a3d5a]">Google: Calendar settings → Integrate calendar → Secret address in iCal format</span>
+              </p>
             </div>
           </div>
         </section>

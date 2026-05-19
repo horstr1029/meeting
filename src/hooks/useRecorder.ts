@@ -10,6 +10,7 @@ export interface RecorderResult {
   duration: number;
   audioBlob: Blob | null;
   analyserNode: AnalyserNode | null;
+  stream: MediaStream | null;
   start: (mode: SourceMode, micDeviceId?: string, micGain?: number, tabGain?: number, preferredMimeType?: string) => Promise<void>;
   pause: () => void;
   stop: () => void;
@@ -23,6 +24,7 @@ export function useRecorder(): RecorderResult {
   const [audioBlob, setAudioBlob] = useState<Blob | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [analyserNode, setAnalyserNode] = useState<AnalyserNode | null>(null);
+  const [exposedStream, setExposedStream] = useState<MediaStream | null>(null);
 
   const mediaRecorderRef = useRef<MediaRecorder | null>(null);
   const chunksRef = useRef<Blob[]>([]);
@@ -98,6 +100,7 @@ export function useRecorder(): RecorderResult {
         }
 
         streamRef.current = dest.stream;
+        setExposedStream(dest.stream);
 
         // Analyser for waveform
         const analyser = ctx.createAnalyser();
@@ -163,6 +166,7 @@ export function useRecorder(): RecorderResult {
     mediaRecorderRef.current?.stop();
     stopAllTracks();
     setAnalyserNode(null);
+    setExposedStream(null);
   }, []);
 
   const reset = useCallback(() => {
@@ -170,6 +174,7 @@ export function useRecorder(): RecorderResult {
     mediaRecorderRef.current?.stop();
     stopAllTracks();
     setAnalyserNode(null);
+    setExposedStream(null);
     setRecordingState("idle");
     setAudioBlob(null);
     setDuration(0);
@@ -177,5 +182,5 @@ export function useRecorder(): RecorderResult {
     chunksRef.current = [];
   }, []);
 
-  return { state: recordingState, duration, audioBlob, analyserNode, start, pause, stop, reset, error };
+  return { state: recordingState, duration, audioBlob, analyserNode, stream: exposedStream, start, pause, stop, reset, error };
 }

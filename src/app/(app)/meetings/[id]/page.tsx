@@ -1,10 +1,11 @@
 "use client";
 
-import { useEffect, useState, useCallback, useRef } from "react";
+import { useEffect, useState, useCallback, useRef, useMemo } from "react";
 import { useParams, useRouter } from "next/navigation";
 import Link from "next/link";
 import ReactMarkdown from "react-markdown";
 import { useMinutesStream, parseActionItems } from "@/hooks/useMinutesStream";
+import { useKeyboardShortcuts } from "@/hooks/useKeyboardShortcuts";
 
 type Tab = "transcript" | "minutes" | "actions";
 type Language = "english" | "afrikaans";
@@ -20,6 +21,8 @@ interface ActionItem {
   done: boolean;
 }
 
+interface Series { id: string; name: string }
+
 interface Meeting {
   id: string;
   title: string;
@@ -30,6 +33,7 @@ interface Meeting {
   attendees: string;
   agenda: string | null;
   tags: string;
+  seriesId: string | null;
   actionItems: ActionItem[];
 }
 
@@ -73,48 +77,165 @@ function parseSpeakerBlocks(text: string): { speaker: string | null; lines: stri
   return blocks;
 }
 
-function SpeakerTranscript({ text }: { text: string }) {
+function TalkTimeStats({ text }: { text: string }) {
   const blocks = parseSpeakerBlocks(text);
   const hasSpeakers = blocks.some((b) => b.speaker !== null);
-  if (!hasSpeakers) {
-    return <span>{text}</span>;
-  }
+  if (!hasSpeakers) return null;
 
+  const counts = new Map<string, number>();
+  blocks.forEach((b) => {
+    if (!b.speaker) return;
+    const words = b.lines.trim().split(/\s+/).filter(Boolean).length;
+    counts.set(b.speaker, (counts.get(b.speaker) ?? 0) + words);
+  });
+
+  const total = Array.from(counts.values()).reduce((a, b) => a + b, 0) || 1;
+  const speakers = Array.from(counts.entries()).sort((a, b) => b[1] - a[1]);
   const speakerMap = new Map<string, number>();
   blocks.forEach((b) => {
-    if (b.speaker && !speakerMap.has(b.speaker)) {
-      speakerMap.set(b.speaker, speakerMap.size);
-    }
+    if (b.speaker && !speakerMap.has(b.speaker)) speakerMap.set(b.speaker, speakerMap.size);
   });
 
   return (
-    <div className="space-y-3">
-      {/* Legend */}
-      <div className="flex gap-2 flex-wrap pb-2 border-b border-[#1e1f35]">
-        {Array.from(speakerMap.entries()).map(([sp, idx]) => {
-          const c = SPEAKER_COLORS[idx % SPEAKER_COLORS.length];
-          return (
-            <span key={sp} className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${c.label}`}>
-              {sp}
-            </span>
-          );
-        })}
-      </div>
-      {blocks.map((block, i) => {
-        if (block.speaker === null) {
-          return block.lines.trim() ? (
-            <p key={i} className="text-[#8b8fa8] text-sm whitespace-pre-wrap">{block.lines}</p>
-          ) : null;
-        }
-        const idx = speakerMap.get(block.speaker) ?? 0;
+    <div className="bg-[#181929] rounded-xl p-4 border border-[#252640] space-y-2">
+      <p className="text-[10px] uppercase tracking-widest text-[#4a4d6a] font-semibold mb-3">Talk time</p>
+      {speakers.map(([speaker, words]) => {
+        const pct = Math.round((words / total) * 100);
+        const idx = speakerMap.get(speaker) ?? 0;
         const c = SPEAKER_COLORS[idx % SPEAKER_COLORS.length];
         return (
-          <div key={i} className={`rounded-lg px-3 py-2 border ${c.bg} ${c.border}`}>
-            <span className={`text-[10px] font-bold uppercase tracking-wide ${c.text} block mb-1`}>{block.speaker}</span>
-            <p className={`text-sm whitespace-pre-wrap ${c.text}`}>{block.lines}</p>
+          <div key={speaker} className="space-y-1">
+            <div className="flex justify-between items-center">
+              <span className={`text-xs font-medium ${c.text}`}>{speaker}</span>
+              <span className="text-xs text-[#6b6f8e]">{words.toLocaleString()} words · {pct}%</span>
+            </div>
+            <div className="h-1.5 rounded-full bg-[#252640] overflow-hidden">
+              <div className={`h-full rounded-full ${c.label.split(" ")[0]}`} style={{ width: `${pct}%` }} />
+            </div>
           </div>
         );
       })}
+    </div>
+  );
+}
+
+const CHAPTER_WORDS = 200;
+const STOP_WORDS = new Set(["the","a","an","and","or","but","in","on","at","to","for","of","with","i","we","so","is","it","that","this","uh","um","okay","ok","yeah","yes","no","right","well"]);
+
+function chapterLabel(text: string): string {
+  const words = text.replace(/\s+/g, " ").trim().split(" ");
+  const meaningful = words.filter((w) => !STOP_WORDS.has(w.toLowerCase().replace(/[^a-z]/g, ""))).slice(0, 6);
+  const label = meaningful.join(" ").replace(/[.,:;!?]+$/, "");
+  return label.length > 40 ? label.slice(0, 38) + "…" : label || "Part";
+}
+
+interface Chapter {
+  id: string;
+  label: string;
+  blocks: { speaker: string | null; lines: string }[];
+}
+
+function parseChapters(text: string): Chapter[] {
+  const blocks = parseSpeakerBlocks(text);
+  const chapters: Chapter[] = [];
+  let current: typeof blocks = [];
+  let wordCount = 0;
+  let idx = 0;
+
+  const flush = () => {
+    if (!current.length) return;
+    const firstText = current.find((b) => b.lines.trim())?.lines ?? "";
+    chapters.push({ id: `ch-${idx}`, label: chapterLabel(firstText), blocks: current });
+    idx++;
+    current = [];
+    wordCount = 0;
+  };
+
+  for (const block of blocks) {
+    const words = block.lines.trim().split(/\s+/).filter(Boolean).length;
+    if (wordCount > 0 && wordCount + words > CHAPTER_WORDS) flush();
+    current.push(block);
+    wordCount += words;
+  }
+  flush();
+
+  return chapters;
+}
+
+function ChapteredTranscript({ text }: { text: string }) {
+  const blocks = parseSpeakerBlocks(text);
+  const hasSpeakers = blocks.some((b) => b.speaker !== null);
+  const chapters = parseChapters(text);
+  const showChapters = chapters.length > 1;
+
+  const speakerMap = new Map<string, number>();
+  blocks.forEach((b) => {
+    if (b.speaker && !speakerMap.has(b.speaker)) speakerMap.set(b.speaker, speakerMap.size);
+  });
+
+  const scrollTo = (id: string) => {
+    document.getElementById(id)?.scrollIntoView({ behavior: "smooth", block: "start" });
+  };
+
+  return (
+    <div className="space-y-3">
+      {/* Speaker legend */}
+      {hasSpeakers && (
+        <div className="flex gap-2 flex-wrap pb-2 border-b border-[#1e1f35]">
+          {Array.from(speakerMap.entries()).map(([sp, i]) => {
+            const c = SPEAKER_COLORS[i % SPEAKER_COLORS.length];
+            return (
+              <span key={sp} className={`text-[10px] px-2 py-0.5 rounded-full font-medium ${c.label}`}>{sp}</span>
+            );
+          })}
+        </div>
+      )}
+
+      {/* Chapter pill nav */}
+      {showChapters && (
+        <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-none">
+          {chapters.map((ch, i) => (
+            <button
+              key={ch.id}
+              onClick={() => scrollTo(ch.id)}
+              className="flex-shrink-0 text-[11px] px-3 py-1 rounded-full bg-[#252640] hover:bg-violet-900/40 hover:text-violet-300 border border-[#2f3158] text-[#8b8fa8] transition whitespace-nowrap"
+            >
+              <span className="text-[#4a4d6a] mr-1">{i + 1}.</span>{ch.label}
+            </button>
+          ))}
+        </div>
+      )}
+
+      {/* Transcript body with chapter anchors */}
+      <div className="space-y-3">
+        {chapters.map((ch, ci) => (
+          <div key={ch.id}>
+            {showChapters && (
+              <div id={ch.id} className="flex items-center gap-3 pt-2 pb-1 scroll-mt-4">
+                <span className="text-[10px] font-semibold text-[#4a4d6a] uppercase tracking-widest whitespace-nowrap">
+                  {ci + 1}. {ch.label}
+                </span>
+                <div className="flex-1 h-px bg-[#1e1f35]" />
+              </div>
+            )}
+            {ch.blocks.map((block, bi) => {
+              if (!hasSpeakers || block.speaker === null) {
+                return block.lines.trim() ? (
+                  <p key={bi} className="text-[#8b8fa8] text-sm whitespace-pre-wrap">{block.lines}</p>
+                ) : null;
+              }
+              const idx2 = speakerMap.get(block.speaker) ?? 0;
+              const c = SPEAKER_COLORS[idx2 % SPEAKER_COLORS.length];
+              return (
+                <div key={bi} className={`rounded-lg px-3 py-2 border ${c.bg} ${c.border}`}>
+                  <span className={`text-[10px] font-bold uppercase tracking-wide ${c.text} block mb-1`}>{block.speaker}</span>
+                  <p className={`text-sm whitespace-pre-wrap ${c.text}`}>{block.lines}</p>
+                </div>
+              );
+            })}
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
@@ -138,6 +259,11 @@ export default function MeetingPage() {
   const [showPromptEditor, setShowPromptEditor] = useState(false);
   const [customPrompt, setCustomPrompt] = useState("");
   const [reading, setReading] = useState(false);
+  const [followUpEmail, setFollowUpEmail] = useState("");
+  const [draftingEmail, setDraftingEmail] = useState(false);
+  const [showFollowUp, setShowFollowUp] = useState(false);
+  const [pushingWebhook, setPushingWebhook] = useState(false);
+  const [webhookMsg, setWebhookMsg] = useState<{ ok: boolean; text: string } | null>(null);
 
   const [actionItems, setActionItems] = useState<ActionItem[]>([]);
   const [actionFilter, setActionFilter] = useState<ActionFilter>("all");
@@ -160,6 +286,10 @@ export default function MeetingPage() {
   // Tags
   const [newTag, setNewTag] = useState("");
 
+  // Series
+  const [allSeries, setAllSeries] = useState<Series[]>([]);
+  const [assigningSeries, setAssigningSeries] = useState(false);
+
   const speechRef = useRef<SpeechSynthesisUtterance | null>(null);
 
   const loadMeeting = useCallback(async () => {
@@ -177,7 +307,10 @@ export default function MeetingPage() {
     setLoading(false);
   }, [id, router, setMinutes]);
 
-  useEffect(() => { loadMeeting(); }, [loadMeeting]);
+  useEffect(() => {
+    loadMeeting();
+    fetch("/api/series").then((r) => r.json()).then((s: Series[]) => setAllSeries(s)).catch(() => {});
+  }, [loadMeeting]);
 
   useEffect(() => {
     if (!streaming && minutes && meeting) {
@@ -242,6 +375,91 @@ export default function MeetingPage() {
     });
     setTab("minutes");
   };
+
+  const draftFollowUpEmail = async () => {
+    if (!minutes || !meeting) return;
+    setDraftingEmail(true);
+    setFollowUpEmail("");
+    setShowFollowUp(true);
+
+    const todoItems = actionItems
+      .filter((a) => !a.done)
+      .map((a) => `- ${a.text}${a.assignee ? ` (${a.assignee})` : ""}`)
+      .join("\n");
+
+    const prompt = `Write a concise, professional follow-up email based on the meeting minutes below.
+The email should:
+- Have a subject line on the first line prefixed with "Subject: "
+- Open with a brief thank-you sentence
+- Summarise the 2-3 most important decisions or outcomes
+- List the open action items if any
+- Close with a professional sign-off
+
+${todoItems ? `Open action items:\n${todoItems}\n\n` : ""}Meeting minutes:
+${minutes}`;
+
+    try {
+      const res = await fetch("/api/generate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ prompt, stream: true }),
+      });
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+
+      const reader = res.body!.getReader();
+      const decoder = new TextDecoder();
+      let accumulated = "";
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        const chunk = decoder.decode(value, { stream: true });
+        for (const line of chunk.split("\n")) {
+          if (!line.trim()) continue;
+          try {
+            const json = JSON.parse(line);
+            if (json.response) { accumulated += json.response; setFollowUpEmail(accumulated); }
+          } catch { /* skip */ }
+        }
+      }
+    } catch {
+      setFollowUpEmail("Failed to generate email. Make sure Ollama is running.");
+    } finally {
+      setDraftingEmail(false);
+    }
+  };
+
+  const pushToWebhook = async () => {
+    if (!meeting) return;
+    setPushingWebhook(true);
+    setWebhookMsg(null);
+    try {
+      const res = await fetch(`/api/meetings/${id}/webhook`, { method: "POST" });
+      const data = await res.json() as { success?: boolean; error?: string };
+      if (res.ok) {
+        setWebhookMsg({ ok: true, text: "Posted successfully" });
+      } else {
+        setWebhookMsg({ ok: false, text: data.error ?? `Error ${res.status}` });
+      }
+    } catch {
+      setWebhookMsg({ ok: false, text: "Network error" });
+    } finally {
+      setPushingWebhook(false);
+      setTimeout(() => setWebhookMsg(null), 4000);
+    }
+  };
+
+  const meetingShortcuts = useMemo(() => ({
+    "t": () => setTab("transcript"),
+    "T": () => setTab("transcript"),
+    "m": () => setTab("minutes"),
+    "M": () => setTab("minutes"),
+    "a": () => setTab("actions"),
+    "A": () => setTab("actions"),
+    "g": () => { if (meeting?.transcript) generateMinutes(); },
+    "G": () => { if (meeting?.transcript) generateMinutes(); },
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }), [meeting?.transcript]);
+  useKeyboardShortcuts(meetingShortcuts);
 
   const extractActions = async () => {
     if (!minutes) return;
@@ -334,6 +552,18 @@ Only output TASK lines. No other text.`;
     setNewTaskDueDate("");
     setAddingTask(false);
     setShowAddForm(false);
+  };
+
+  const assignToSeries = async (sid: string | null) => {
+    if (!meeting) return;
+    setAssigningSeries(true);
+    await fetch(`/api/meetings/${id}`, {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ seriesId: sid }),
+    });
+    setMeeting((m) => m ? { ...m, seriesId: sid } : m);
+    setAssigningSeries(false);
   };
 
   const addTag = async (tag: string) => {
@@ -485,6 +715,25 @@ Only output TASK lines. No other text.`;
             </div>
           )}
 
+          {/* Series row */}
+          <div className="flex items-center gap-2">
+            <span className="text-xs text-[#4a4d6a]">Series:</span>
+            <select
+              value={meeting.seriesId ?? ""}
+              onChange={(e) => assignToSeries(e.target.value || null)}
+              disabled={assigningSeries}
+              className="text-xs bg-[#181929] border border-[#252640] rounded-lg px-2 py-1 text-[#c5c7e8] focus:outline-none focus:border-violet-500 disabled:opacity-50"
+            >
+              <option value="">— none —</option>
+              {allSeries.map((s) => (
+                <option key={s.id} value={s.id}>{s.name}</option>
+              ))}
+            </select>
+            {meeting.seriesId && (
+              <a href={`/series/${meeting.seriesId}`} className="text-xs text-violet-400 hover:underline">View series →</a>
+            )}
+          </div>
+
           {/* Tags row */}
           <div className="flex items-center gap-2 flex-wrap pb-1">
             {tagList.map((tag) => (
@@ -543,6 +792,8 @@ Only output TASK lines. No other text.`;
               </div>
             </div>
 
+            {meeting.transcript && <TalkTimeStats text={meeting.transcript} />}
+
             {editingTranscript ? (
               <div className="space-y-2">
                 <textarea value={transcriptDraft} onChange={(e) => setTranscriptDraft(e.target.value)}
@@ -555,7 +806,7 @@ Only output TASK lines. No other text.`;
             ) : (
               <div className="bg-[#181929] rounded-xl p-5 text-sm text-[#c5c7e8] leading-relaxed min-h-48 border border-[#252640]">
                 {meeting.transcript
-                  ? <SpeakerTranscript text={meeting.transcript} />
+                  ? <ChapteredTranscript text={meeting.transcript} />
                   : <span className="text-[#4a4d6a] italic">{af ? "Geen transkripsie nog nie." : "No transcript yet."}</span>}
               </div>
             )}
@@ -606,6 +857,14 @@ Only output TASK lines. No other text.`;
                       className={`text-xs px-3 py-1.5 rounded-lg border transition ${reading ? "border-red-700 bg-red-950/50 text-red-300" : "bg-[#252640] hover:bg-[#2f3158] border-[#252640] text-[#c5c7e8]"}`}>
                       {reading ? "⏹ Stop" : "🔊 Read aloud"}
                     </button>
+                    <button onClick={draftFollowUpEmail} disabled={draftingEmail}
+                      className="text-xs px-3 py-1.5 rounded-lg bg-emerald-900/50 hover:bg-emerald-800/60 border border-emerald-800/60 text-emerald-300 disabled:opacity-50 transition">
+                      {draftingEmail ? "Drafting…" : "✉ Follow-up email"}
+                    </button>
+                    <button onClick={pushToWebhook} disabled={pushingWebhook}
+                      className="text-xs px-3 py-1.5 rounded-lg bg-[#252640] hover:bg-[#2f3158] border border-[#252640] text-[#c5c7e8] disabled:opacity-50 transition">
+                      {pushingWebhook ? "Pushing…" : "⚡ Push to webhook"}
+                    </button>
                   </>
                 )}
               </div>
@@ -641,6 +900,46 @@ Only output TASK lines. No other text.`;
               </button>
             )}
             {extractError && <p className="text-sm text-red-400 bg-red-950/50 px-3 py-2 rounded-lg border border-red-900/50">{extractError}</p>}
+
+            {webhookMsg && (
+              <p className={`text-sm px-3 py-2 rounded-lg border ${webhookMsg.ok ? "text-emerald-300 bg-emerald-950/40 border-emerald-900/40" : "text-red-400 bg-red-950/50 border-red-900/50"}`}>
+                {webhookMsg.ok ? "⚡ " : ""}{webhookMsg.text}
+              </p>
+            )}
+
+            {/* Follow-up email panel */}
+            {showFollowUp && (
+              <div className="bg-[#181929] rounded-xl border border-emerald-900/40 overflow-hidden">
+                <div className="flex items-center justify-between px-4 py-2.5 border-b border-emerald-900/30 bg-emerald-950/20">
+                  <span className="text-xs font-semibold text-emerald-300 uppercase tracking-wide">Follow-up email draft</span>
+                  <div className="flex gap-2">
+                    {followUpEmail && !draftingEmail && (() => {
+                      const subjectMatch = followUpEmail.match(/^Subject:\s*(.+)/im);
+                      const subject = subjectMatch ? subjectMatch[1].trim() : "Meeting follow-up";
+                      const body = followUpEmail.replace(/^Subject:.*\n?/im, "").trim();
+                      return (
+                        <>
+                          <button
+                            onClick={() => navigator.clipboard.writeText(followUpEmail)}
+                            className="text-xs px-2.5 py-1 rounded bg-[#252640] hover:bg-[#2f3158] text-[#c5c7e8] transition">
+                            Copy
+                          </button>
+                          <a
+                            href={`mailto:?subject=${encodeURIComponent(subject)}&body=${encodeURIComponent(body)}`}
+                            className="text-xs px-2.5 py-1 rounded bg-emerald-800/50 hover:bg-emerald-700/60 text-emerald-200 transition">
+                            Open in mail
+                          </a>
+                        </>
+                      );
+                    })()}
+                    <button onClick={() => setShowFollowUp(false)} className="text-[#6b6f8e] hover:text-white text-sm leading-none transition">×</button>
+                  </div>
+                </div>
+                <div className="px-4 py-4 text-sm text-[#c5c7e8] whitespace-pre-wrap font-mono leading-relaxed min-h-24">
+                  {followUpEmail || <span className="text-[#4a4d6a] italic">Generating…</span>}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
