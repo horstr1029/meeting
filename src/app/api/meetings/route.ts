@@ -1,16 +1,15 @@
-import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { resolveUserId } from "@/lib/apiKeyAuth";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function GET(req: NextRequest) {
-  const session = await auth();
-  if (!session?.user?.id) {
+  const userId = await resolveUserId(req);
+  if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const q = req.nextUrl.searchParams.get("q")?.trim() || "";
   const tag = req.nextUrl.searchParams.get("tag")?.trim() || "";
-  const userId = session.user.id as string;
 
   const meetings = await prisma.meeting.findMany({
     where: {
@@ -57,8 +56,8 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
-  const session = await auth();
-  if (!session?.user?.id) {
+  const userId = await resolveUserId(req);
+  if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
@@ -71,7 +70,7 @@ export async function POST(req: NextRequest) {
 
   const meeting = await prisma.meeting.create({
     data: {
-      userId: session.user.id as string,
+      userId,
       title: body.title ?? "Untitled Meeting",
       language: body.language ?? "en",
     },

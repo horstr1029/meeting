@@ -1,13 +1,13 @@
-import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { resolveUserId } from "@/lib/apiKeyAuth";
 import { NextRequest, NextResponse } from "next/server";
 
 export async function POST(req: NextRequest) {
-  const session = await auth();
-  if (!session?.user?.id) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  const userId = await resolveUserId(req);
+  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const settings = await prisma.userSettings.findUnique({
-    where: { userId: session.user.id as string },
+    where: { userId },
     select: { assemblyAiApiKey: true },
   });
   if (!settings?.assemblyAiApiKey) {

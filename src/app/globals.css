@@ -18,7 +18,7 @@ body {
   font-family: var(--font-sans, Arial, Helvetica, sans-serif);
 }
 
-::-webkit-scrollbar { width: 5px; height: 5px; }
-::-webkit-scrollbar-track { background: transparent; }
-::-webkit-scrollbar-thumb { background: #2f3158; border-radius: 3px; }
-::-webkit-scrollbar-thumb:hover { background: #3d4070; }
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: #1a1d35; }
+::-webkit-scrollbar-thumb { background: #4a4f7a; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #6366a8; }

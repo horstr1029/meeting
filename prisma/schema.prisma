@@ -82,4 +82,5 @@ model UserSettings {
   theme                   String  @default("dark")
   useProxy                Boolean @default(true)
   lowMemoryMode           Boolean @default(true)
+  extensionApiKey         String  @default("")
 }

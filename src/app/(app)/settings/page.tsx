@@ -25,6 +25,7 @@ interface Settings {
   logoDataUrl: string;
   theme: string;
   lowMemoryMode: boolean;
+  extensionApiKey: string;
 }
 
 const DEFAULT_SETTINGS: Settings = {
@@ -40,6 +41,7 @@ const DEFAULT_SETTINGS: Settings = {
   logoDataUrl: "",
   theme: "dark",
   lowMemoryMode: true,
+  extensionApiKey: "",
 };
 
 const WHISPER_MODELS = ["whisper-1", "tiny", "base", "small", "medium", "large", "large-v2", "large-v3"];
@@ -93,6 +95,7 @@ export default function SettingsPage() {
   const [ollamaError, setOllamaError] = useState("");
   const [ollamaModels, setOllamaModels] = useState<string[]>([]);
   const [confirmReset, setConfirmReset] = useState(false);
+  const [showApiKey, setShowApiKey] = useState(false);
   const logoInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -422,6 +425,53 @@ export default function SettingsPage() {
                 className={inputCls}
               />
               <p className="text-xs text-[#6b6f8e] mt-1">Pre-filled in email export</p>
+            </div>
+          </div>
+        </section>
+
+        {/* ── Chrome Extension ── */}
+        <section className="space-y-4">
+          <h2 className="text-xs font-semibold text-[#6b6f8e] uppercase tracking-wider">Chrome Extension</h2>
+          <div className="bg-[#181929] rounded-xl p-5 border border-[#252640] space-y-4">
+            <p className="text-xs text-[#6b6f8e]">
+              The DAB Meetings Chrome extension uses this key to authenticate with the API without requiring a browser login session.
+            </p>
+            <div>
+              <label className="text-sm text-[#8b8fa8] block mb-2">Extension API Key</label>
+              <div className="flex gap-2">
+                <input
+                  type={showApiKey ? "text" : "password"}
+                  value={settings.extensionApiKey}
+                  onChange={(e) => set("extensionApiKey", e.target.value)}
+                  placeholder="Click Generate to create a key"
+                  className={inputCls}
+                  readOnly
+                />
+                <button
+                  onClick={() => setShowApiKey((v) => !v)}
+                  className="px-3 py-1.5 rounded-lg text-xs border border-[#252640] text-[#8b8fa8] hover:border-[#3a3c6a] hover:text-white transition whitespace-nowrap"
+                >
+                  {showApiKey ? "Hide" : "Show"}
+                </button>
+                <button
+                  onClick={() => {
+                    const key = Array.from(crypto.getRandomValues(new Uint8Array(32)))
+                      .map((b) => b.toString(16).padStart(2, "0")).join("");
+                    set("extensionApiKey", key);
+                  }}
+                  className="px-3 py-1.5 rounded-lg text-xs border border-violet-700 bg-violet-950/40 text-violet-300 hover:bg-violet-900/40 transition whitespace-nowrap"
+                >
+                  Generate
+                </button>
+              </div>
+              {settings.extensionApiKey && (
+                <button
+                  onClick={() => { navigator.clipboard.writeText(settings.extensionApiKey); toast("API key copied", "success"); }}
+                  className="mt-2 text-xs text-[#6b6f8e] hover:text-white transition"
+                >
+                  Copy to clipboard
+                </button>
+              )}
             </div>
           </div>
         </section>

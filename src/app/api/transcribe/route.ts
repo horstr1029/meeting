@@ -1,17 +1,17 @@
-import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { resolveUserId } from "@/lib/apiKeyAuth";
 import { NextRequest, NextResponse } from "next/server";
 
 export const maxDuration = 1800; // 30 minutes — allows long AssemblyAI polls
 
 export async function POST(req: NextRequest) {
-  const session = await auth();
-  if (!session?.user?.id) {
+  const userId = await resolveUserId(req);
+  if (!userId) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
   const settings = await prisma.userSettings.findUnique({
-    where: { userId: session.user.id as string },
+    where: { userId },
   });
 
   if (!settings) {
@@ -25,6 +25,16 @@ export async function POST(req: NextRequest) {
       { error: "Web Speech API runs in the browser — no server call needed" },
       { status: 400 }
     );
+  }
+
+  // AssemblyAI raw-body path: client sends audio directly (no FormData) to avoid
+  // buffering 100+ MB through the server twice for long recordings.
+  if (transcriptionProvider === "assemblyai") {
+    const contentType = req.headers.get("content-type") ?? "";
+    if (!contentType.includes("multipart/form-data")) {
+      const lang = req.nextUrl.searchParams.get("lang") ?? settings.whisperLang;
+      return transcribeWithAssemblyAIStream(req, settings.assemblyAiApiKey, lang);
+    }
   }
 
   let formData: FormData;
@@ -193,6 +203,7 @@ async function transcribeWithAssemblyAI(formData: FormData, apiKey: string, lang
   const transcriptBody: Record<string, unknown> = {
     audio_url: uploadUrl,
     speaker_labels: true,
+    speech_models: ["universal-2"],
   };
   if (language) transcriptBody.language_code = language;
 
@@ -216,6 +227,81 @@ async function transcribeWithAssemblyAI(formData: FormData, apiKey: string, lang
   }
 
   // Return job ID immediately — client polls /api/transcribe/assemblyai-status
+  return NextResponse.json({ assemblyJobId: transcriptId });
+}
+
+// Raw-body variant: reads the audio body directly (no FormData parsing) then uploads to AssemblyAI.
+// Used when the client sends raw audio bytes to avoid multipart parsing overhead for large files.
+async function transcribeWithAssemblyAIStream(req: NextRequest, apiKey: string, language: string) {
+  if (!apiKey) {
+    return NextResponse.json({ error: "AssemblyAI API key not set in settings" }, { status: 400 });
+  }
+
+  const headers = { authorization: apiKey, "content-type": "application/json" };
+
+  let audioBuffer: ArrayBuffer;
+  try {
+    console.log("[assemblyai] reading request body...");
+    audioBuffer = await req.arrayBuffer();
+    console.log(`[assemblyai] body received: ${audioBuffer.byteLength} bytes`);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    console.error("[assemblyai] body read failed:", message);
+    return NextResponse.json({ error: `Failed to read audio: ${message}` }, { status: 400 });
+  }
+
+  let uploadUrl: string;
+  try {
+    console.log("[assemblyai] uploading to AssemblyAI...");
+    const uploadRes = await fetch("https://api.assemblyai.com/v2/upload", {
+      method: "POST",
+      headers: { authorization: apiKey, "content-type": "application/octet-stream" },
+      body: audioBuffer,
+      signal: AbortSignal.timeout(600_000),
+    });
+    if (!uploadRes.ok) {
+      const err = await uploadRes.json().catch(() => ({})) as { error?: string };
+      console.error("[assemblyai] upload failed:", uploadRes.status, err);
+      return NextResponse.json({ error: err.error ?? "AssemblyAI upload failed" }, { status: 502 });
+    }
+    const uploadData = await uploadRes.json() as { upload_url: string };
+    uploadUrl = uploadData.upload_url;
+    console.log("[assemblyai] upload complete, url:", uploadUrl.slice(0, 60));
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    console.error("[assemblyai] upload exception:", message);
+    return NextResponse.json({ error: `AssemblyAI upload failed: ${message}` }, { status: 502 });
+  }
+
+  const transcriptBody: Record<string, unknown> = {
+    audio_url: uploadUrl,
+    speaker_labels: true,
+    speech_models: ["universal-2"],
+  };
+  if (language) transcriptBody.language_code = language;
+
+  let transcriptId: string;
+  try {
+    const submitRes = await fetch("https://api.assemblyai.com/v2/transcript", {
+      method: "POST",
+      headers,
+      body: JSON.stringify(transcriptBody),
+      signal: AbortSignal.timeout(30_000),
+    });
+    if (!submitRes.ok) {
+      const err = await submitRes.json().catch(() => ({})) as { error?: string };
+      console.error("[assemblyai] submit failed:", submitRes.status, err);
+      return NextResponse.json({ error: err.error ?? "AssemblyAI submission failed" }, { status: 502 });
+    }
+    const submitData = await submitRes.json() as { id: string };
+    transcriptId = submitData.id;
+    console.log("[assemblyai] job submitted:", transcriptId);
+  } catch (err) {
+    const message = err instanceof Error ? err.message : "Unknown error";
+    console.error("[assemblyai] submit exception:", message);
+    return NextResponse.json({ error: `AssemblyAI submission failed: ${message}` }, { status: 502 });
+  }
+
   return NextResponse.json({ assemblyJobId: transcriptId });
 }
 

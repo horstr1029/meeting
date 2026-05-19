@@ -148,3 +148,10 @@
 - Light / dark mode via CSS variables
 - Theme stored in UserSettings.theme
 - Toggle button in sidebar footer
+
+## Phase 26 — Google Meet & Microsoft Teams Recording
+- Browser extension or tab-capture approach to record Google Meet / Teams audio
+- Capture system audio + mic mix from active meeting tab
+- Auto-detect meeting URL to pre-fill meeting title
+- One-click "Record this meeting" button when on a Meet/Teams tab
+- Seamless hand-off to existing transcription pipeline on meeting end

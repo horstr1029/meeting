@@ -29,6 +29,7 @@ export default function RecordPage() {
   const [transcribeStatus, setTranscribeStatus] = useState<string>("");
   const [transcribeError, setTranscribeError] = useState<string | null>(null);
   const [langOverride, setLangOverride] = useState("");
+  const [transcriptionProvider, setTranscriptionProvider] = useState("");
 
   const audioBlobUrlRef = useRef<string | null>(null);
 
@@ -42,6 +43,7 @@ export default function RecordPage() {
     loadMicDevices();
     fetch("/api/settings").then((r) => r.json()).then((s) => {
       if (s.audioFormat) setAudioFormat(s.audioFormat);
+      if (s.transcriptionProvider) setTranscriptionProvider(s.transcriptionProvider);
     });
   }, [loadMicDevices]);
 
@@ -82,22 +84,34 @@ export default function RecordPage() {
       const meeting = await meetingRes.json();
 
       let blobToSend = activeBlob;
-      try {
-        setTranscribeStatus("Converting audio…");
-        blobToSend = await downsampleAudio(activeBlob, 16000);
-      } catch {
-        // Fall back to original blob if downsampling fails
+      if (transcriptionProvider !== "assemblyai") {
+        try {
+          setTranscribeStatus("Converting audio…");
+          blobToSend = await downsampleAudio(activeBlob, 16000);
+        } catch {
+          // Fall back to original blob if downsampling fails
+        }
       }
 
-      const formData = new FormData();
-      formData.append("file", blobToSend, "audio.wav");
-      if (langOverride) formData.append("langOverride", langOverride);
-
       setTranscribeStatus("Uploading…");
-      const transcribeRes = await fetch("/api/transcribe", {
-        method: "POST",
-        body: formData,
-      });
+      let transcribeRes: Response;
+      if (transcriptionProvider === "assemblyai") {
+        // Stream raw audio directly — avoids buffering 100 MB+ through the server twice
+        const params = langOverride ? `?lang=${encodeURIComponent(langOverride)}` : "";
+        transcribeRes = await fetch(`/api/transcribe${params}`, {
+          method: "POST",
+          headers: { "content-type": blobToSend.type || "audio/wav" },
+          body: blobToSend,
+        });
+      } else {
+        const formData = new FormData();
+        formData.append("file", blobToSend, "audio.wav");
+        if (langOverride) formData.append("langOverride", langOverride);
+        transcribeRes = await fetch("/api/transcribe", {
+          method: "POST",
+          body: formData,
+        });
+      }
 
       if (!transcribeRes.ok) {
         let errMsg = `Server error ${transcribeRes.status}`;

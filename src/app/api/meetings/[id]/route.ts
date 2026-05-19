@@ -1,5 +1,5 @@
-import { auth } from "@/auth";
 import { prisma } from "@/lib/prisma";
+import { resolveUserId } from "@/lib/apiKeyAuth";
 import { NextRequest, NextResponse } from "next/server";
 
 async function getMeetingForUser(id: string, userId: string) {
@@ -10,26 +10,22 @@ async function getMeetingForUser(id: string, userId: string) {
 }
 
 export async function GET(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const session = await auth();
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const userId = await resolveUserId(req);
+  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await params;
-  const meeting = await getMeetingForUser(id, session.user.id as string);
+  const meeting = await getMeetingForUser(id, userId);
   if (!meeting) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   return NextResponse.json(meeting);
 }
 
 export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const session = await auth();
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const userId = await resolveUserId(req);
+  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await params;
-  const existing = await getMeetingForUser(id, session.user.id as string);
+  const existing = await getMeetingForUser(id, userId);
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   let body: Partial<{ title: string; transcript: string; minutes: string; language: string; audioPath: string; attendees: string; agenda: string; tags: string }>;
@@ -57,13 +53,11 @@ export async function PUT(req: NextRequest, { params }: { params: Promise<{ id: 
 }
 
 export async function DELETE(req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
-  const session = await auth();
-  if (!session?.user?.id) {
-    return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
-  }
+  const userId = await resolveUserId(req);
+  if (!userId) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
   const { id } = await params;
-  const existing = await getMeetingForUser(id, session.user.id as string);
+  const existing = await getMeetingForUser(id, userId);
   if (!existing) return NextResponse.json({ error: "Not found" }, { status: 404 });
 
   await prisma.meeting.delete({ where: { id } });

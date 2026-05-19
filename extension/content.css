@@ -1,0 +1,80 @@
+#dab-record-btn {
+  position: fixed;
+  bottom: 80px;
+  right: 20px;
+  z-index: 9999;
+  display: flex;
+  align-items: center;
+  padding: 8px 14px;
+  background: #1e1b4b;
+  color: #e0e7ff;
+  border: 1px solid #4338ca;
+  border-radius: 24px;
+  font-size: 13px;
+  font-weight: 600;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  cursor: pointer;
+  box-shadow: 0 4px 16px rgba(79, 70, 229, 0.4);
+  transition: background 0.15s, box-shadow 0.15s;
+  user-select: none;
+}
+
+#dab-record-btn:hover {
+  background: #2d2780;
+  box-shadow: 0 4px 20px rgba(79, 70, 229, 0.6);
+}
+
+#dab-record-btn.dab-recording {
+  background: #450a0a;
+  border-color: #dc2626;
+  color: #fca5a5;
+  box-shadow: 0 4px 16px rgba(220, 38, 38, 0.4);
+  animation: dab-pulse 2s ease-in-out infinite;
+}
+
+#dab-record-btn.dab-recording:hover {
+  background: #5c1010;
+}
+
+@keyframes dab-pulse {
+  0%, 100% { box-shadow: 0 4px 16px rgba(220, 38, 38, 0.4); }
+  50% { box-shadow: 0 4px 24px rgba(220, 38, 38, 0.7); }
+}
+
+#dab-status-badge {
+  position: fixed;
+  bottom: 130px;
+  right: 20px;
+  z-index: 9999;
+  padding: 6px 12px;
+  border-radius: 12px;
+  font-size: 12px;
+  font-weight: 500;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  max-width: 260px;
+  pointer-events: none;
+}
+
+.dab-status-recording {
+  background: #450a0a;
+  color: #fca5a5;
+  border: 1px solid #dc2626;
+}
+
+.dab-status-info {
+  background: #1e1b4b;
+  color: #c7d2fe;
+  border: 1px solid #4338ca;
+}
+
+.dab-status-success {
+  background: #052e16;
+  color: #86efac;
+  border: 1px solid #16a34a;
+}
+
+.dab-status-error {
+  background: #450a0a;
+  color: #fca5a5;
+  border: 1px solid #dc2626;
+}
