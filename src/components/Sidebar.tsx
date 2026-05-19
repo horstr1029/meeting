@@ -22,6 +22,7 @@ const nav = [
     section: "SETTINGS",
     items: [
       { href: "/settings", icon: "⚙️", label: "Server Settings" },
+      { href: "/help", icon: "❓", label: "Help & Guide" },
     ],
   },
 ];
